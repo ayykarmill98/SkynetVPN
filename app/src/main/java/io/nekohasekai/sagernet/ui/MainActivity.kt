@@ -34,6 +34,7 @@ import io.nekohasekai.sagernet.database.GroupManager
 import io.nekohasekai.sagernet.database.ManagedConfig
 import io.nekohasekai.sagernet.database.ProfileManager
 import io.nekohasekai.sagernet.database.ProxyGroup
+import io.nekohasekai.sagernet.database.SagerDatabase
 import io.nekohasekai.sagernet.database.SubscriptionBean
 import io.nekohasekai.sagernet.database.preference.OnPreferenceDataStoreChangeListener
 import io.nekohasekai.sagernet.databinding.LayoutMainBinding
@@ -53,8 +54,11 @@ import io.nekohasekai.sagernet.ktx.parseProxies
 import io.nekohasekai.sagernet.ktx.readableMessage
 import io.nekohasekai.sagernet.ktx.runOnDefaultDispatcher
 import moe.matsuri.nb4a.utils.Util
+import java.security.MessageDigest
 
 private const val LOCKED_PROFILES_IMPORTED = "lockedProfilesImported"
+private const val LOCKED_PROFILES_FINGERPRINT = "lockedProfilesFingerprint"
+private const val LOCKED_PROFILES_ASSET_IDS = "lockedProfilesAssetIds"
 
 class MainActivity : ThemedActivity(),
     SagerConnection.Callback,
@@ -137,10 +141,6 @@ class MainActivity : ThemedActivity(),
 
     private fun installLockedProfiles() {
         runOnDefaultDispatcher {
-            if (DataStore.configurationStore.getBoolean(LOCKED_PROFILES_IMPORTED, false)) {
-                return@runOnDefaultDispatcher
-            }
-
             val text = runCatching {
                 assets.open("locked_profiles.txt").bufferedReader().useLines { lines ->
                     lines.map { it.trim() }
@@ -153,6 +153,18 @@ class MainActivity : ThemedActivity(),
             }
             if (text.isBlank()) return@runOnDefaultDispatcher
 
+            val fingerprint = MessageDigest.getInstance("SHA-256")
+                .digest(text.toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+            val alreadyImported = DataStore.configurationStore
+                .getBoolean(LOCKED_PROFILES_IMPORTED, false)
+            if (
+                alreadyImported &&
+                DataStore.configurationStore.getString(LOCKED_PROFILES_FINGERPRINT) == fingerprint
+            ) {
+                return@runOnDefaultDispatcher
+            }
+
             val profiles = try {
                 RawUpdater.parseRaw(text)
             } catch (e: Exception) {
@@ -162,13 +174,53 @@ class MainActivity : ThemedActivity(),
             if (profiles.isNullOrEmpty()) return@runOnDefaultDispatcher
 
             val targetId = DataStore.selectedGroupForImport()
-            val created = profiles.map {
-                ProfileManager.createProfile(targetId, it)
+            val previousAssetIds = DataStore.configurationStore
+                .getStringSet(LOCKED_PROFILES_ASSET_IDS, mutableSetOf())
+                ?.mapNotNull { it.toLongOrNull() }
+                ?.toSet() ?: emptySet()
+            val selectedBefore = DataStore.selectedProxy
+            val selectedWasAsset = previousAssetIds.contains(selectedBefore)
+            val selectedWasLockedBeforeMigration =
+                previousAssetIds.isEmpty() && alreadyImported && ConfigLock.isProfileLocked(selectedBefore)
+            val existingByName = SagerDatabase.proxyDao.getByGroup(targetId)
+                .filter { previousAssetIds.contains(it.id) || ConfigLock.isProfileLocked(it.id) }
+                .associateBy { it.displayName() }
+                .toMutableMap()
+
+            val imported = profiles.map {
+                val existing = existingByName.remove(it.displayName())
+                if (existing == null) {
+                    ProfileManager.createProfile(targetId, it)
+                } else {
+                    existing.putBean(it)
+                    ProfileManager.updateProfile(existing)
+                    existing
+                }
             }
-            if (DataStore.selectedProxy == 0L && created.isNotEmpty()) {
-                DataStore.selectedProxy = created.first().id
+
+            val importedIds = imported.map { it.id }
+            ConfigLock.lockProfiles(importedIds)
+
+            val staleAssetIds = previousAssetIds - importedIds.toSet()
+            for (profileId in staleAssetIds) {
+                val entity = SagerDatabase.proxyDao.getById(profileId) ?: continue
+                ConfigLock.unlockProfiles(listOf(profileId))
+                ProfileManager.deleteProfile(entity.groupId, profileId)
             }
-            ConfigLock.lockProfiles(created.map { it.id })
+
+            if (
+                imported.isNotEmpty() &&
+                (DataStore.selectedProxy == 0L || selectedWasAsset || selectedWasLockedBeforeMigration)
+            ) {
+                DataStore.selectedProxy =
+                    (imported.firstOrNull { it.id == selectedBefore } ?: imported.first()).id
+            }
+
+            DataStore.configurationStore.putStringSet(
+                LOCKED_PROFILES_ASSET_IDS,
+                importedIds.map { it.toString() }.toMutableSet()
+            )
+            DataStore.configurationStore.putString(LOCKED_PROFILES_FINGERPRINT, fingerprint)
             DataStore.configurationStore.putBoolean(LOCKED_PROFILES_IMPORTED, true)
         }
     }
@@ -290,13 +342,18 @@ class MainActivity : ThemedActivity(),
         if (managedConfig.profiles.isEmpty()) return
 
         val targetId = DataStore.selectedGroupForImport()
+        val selectedBefore = DataStore.selectedProxy
         val created = managedConfig.profiles.map {
             ProfileManager.createProfile(targetId, it)
         }
         if (managedConfig.locked) {
             ConfigLock.lockProfiles(created.map { it.id })
         }
-        if (DataStore.selectedProxy == 0L && created.isNotEmpty()) {
+        if (
+            created.isNotEmpty() &&
+            (DataStore.selectedProxy == 0L ||
+                (ConfigLock.isAppLocked && ConfigLock.isProfileLocked(selectedBefore)))
+        ) {
             DataStore.selectedProxy = created.first().id
         }
 

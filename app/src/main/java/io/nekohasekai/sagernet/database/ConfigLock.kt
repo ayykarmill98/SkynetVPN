@@ -24,6 +24,13 @@ object ConfigLock {
         DataStore.configurationStore.putStringSet(LOCKED_PROFILE_IDS, lockedIds)
     }
 
+    fun unlockProfiles(profileIds: List<Long>) {
+        if (profileIds.isEmpty()) return
+        val lockedIds = lockedProfileIds()
+        lockedIds.removeAll(profileIds.map { it.toString() }.toSet())
+        DataStore.configurationStore.putStringSet(LOCKED_PROFILE_IDS, lockedIds)
+    }
+
     private fun lockedProfileIds(): MutableSet<String> {
         return DataStore.configurationStore
             .getStringSet(LOCKED_PROFILE_IDS, mutableSetOf())

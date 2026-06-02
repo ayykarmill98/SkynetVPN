@@ -766,6 +766,19 @@ object RawUpdater : GroupUpdater() {
                 }
 
                 json.has("outbounds") -> {
+                    if (
+                        json.has("inbounds") ||
+                        json.has("route") ||
+                        json.has("dns") ||
+                        json.has("experimental")
+                    ) {
+                        return listOf(ConfigBean().applyDefaultValues().apply {
+                            type = 0
+                            config = json.toStringPretty()
+                            name = "sing-box config"
+                        })
+                    }
+
                     return json.getJSONArray("outbounds")
                         .filterIsInstance<JSONObject>()
                         .mapNotNull {
