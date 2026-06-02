@@ -1665,7 +1665,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                 }
 
                 val selectOrChain = select || proxyEntity.type == ProxyEntity.TYPE_CHAIN
-                shareLayout.isGone = selectOrChain
+                shareLayout.isGone = profileLocked || selectOrChain
                 editButton.isGone = profileLocked || select
                 removeButton.isGone = select
 
@@ -1712,7 +1712,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                         popup.show()
                     }
 
-                    if (!(select || proxyEntity.type == ProxyEntity.TYPE_CHAIN)) {
+                    if (!(profileLocked || select || proxyEntity.type == ProxyEntity.TYPE_CHAIN)) {
                         onMainDispatcher {
                             shareLayer.setBackgroundColor(Color.TRANSPARENT)
                             shareButton.setImageResource(R.drawable.ic_social_share)
@@ -1740,6 +1740,10 @@ class ConfigurationFragment @JvmOverloads constructor(
             }
 
             override fun onMenuItemClick(item: MenuItem): Boolean {
+                if (ConfigLock.isProfileLocked(entity.id)) {
+                    (activity as MainActivity).snackbar(R.string.configuration_locked).show()
+                    return true
+                }
                 try {
                     currentName = entity.displayName()!!
                     when (item.itemId) {
