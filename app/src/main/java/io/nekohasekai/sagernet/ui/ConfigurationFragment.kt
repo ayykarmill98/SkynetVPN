@@ -181,7 +181,6 @@ class ConfigurationFragment @JvmOverloads constructor(
         if (!select) {
             toolbar.inflateMenu(R.menu.add_profile_menu)
             if (BuildConfig.CUSTOM_LOCKED_APP) {
-                toolbar.menu.findItem(R.id.action_add)?.isVisible = false
                 toolbar.menu.findItem(R.id.action_update_subscription)?.isVisible = false
                 toolbar.menu.findItem(R.id.action_remove_duplicate)?.isVisible = false
                 toolbar.menu.findItem(R.id.action_connection_test_delete_unavailable)?.isVisible =
@@ -342,13 +341,6 @@ class ConfigurationFragment @JvmOverloads constructor(
         }
 
     suspend fun import(proxies: List<AbstractBean>) {
-        if (BuildConfig.CUSTOM_LOCKED_APP) {
-            onMainDispatcher {
-                snackbar(R.string.configuration_locked).show()
-            }
-            return
-        }
-
         val targetId = DataStore.selectedGroupForImport()
         for (proxy in proxies) {
             ProfileManager.createProfile(targetId, proxy)
@@ -367,9 +359,6 @@ class ConfigurationFragment @JvmOverloads constructor(
     private fun isLockedProfileWriteAction(itemId: Int): Boolean {
         if (!BuildConfig.CUSTOM_LOCKED_APP) return false
         return when (itemId) {
-            R.id.action_scan_qr_code,
-            R.id.action_import_clipboard,
-            R.id.action_import_file,
             R.id.action_new_socks,
             R.id.action_new_http,
             R.id.action_new_ss,

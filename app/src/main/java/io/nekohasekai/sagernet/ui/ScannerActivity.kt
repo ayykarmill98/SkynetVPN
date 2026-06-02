@@ -128,13 +128,6 @@ class ScannerActivity : ThemedActivity(),
                     })
                     return@runOnDefaultDispatcher
                 }
-                if (ConfigLock.isAppLocked) {
-                    onMainDispatcher {
-                        Toast.makeText(app, R.string.configuration_locked, Toast.LENGTH_SHORT)
-                            .show()
-                    }
-                    return@runOnDefaultDispatcher
-                }
                 val results = RawUpdater.parseRaw(text)
                 if (!results.isNullOrEmpty()) {
                     val currentGroupId = DataStore.selectedGroupForImport()
