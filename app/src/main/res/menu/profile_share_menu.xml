@@ -35,12 +35,14 @@
             <item
                 android:id="@+id/action_config_export_file"
                 android:title="@string/action_export_file" />
-            <item
-                android:id="@+id/action_managed_config_locked_clipboard"
-                android:title="@string/locked_config" />
-            <item
-                android:id="@+id/action_managed_config_unlocked_clipboard"
-                android:title="@string/unlocked_config" />
         </menu>
     </item>
+
+    <item
+        android:id="@+id/action_managed_config_locked_clipboard"
+        android:title="@string/locked_config" />
+
+    <item
+        android:id="@+id/action_managed_config_unlocked_clipboard"
+        android:title="@string/unlocked_config" />
 </menu>
