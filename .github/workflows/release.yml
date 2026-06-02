@@ -119,7 +119,10 @@ jobs:
           echo "TAG=$TAG" >> $GITHUB_ENV
           mkdir apks
           find artifacts -name "*.apk" -exec cp {} apks \;
-          LATEST=$(find apks -name "*arm64-v8a*.apk" | head -n 1)
+          LATEST=$(find apks -name "*universal*.apk" | head -n 1)
+          if [ -z "$LATEST" ]; then
+            LATEST=$(find apks -name "*arm64-v8a*.apk" | head -n 1)
+          fi
           if [ -n "$LATEST" ]; then
             cp "$LATEST" apks/SkynetVPN-latest.apk
           fi
