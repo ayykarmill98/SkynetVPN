@@ -1702,7 +1702,10 @@ class ConfigurationFragment @JvmOverloads constructor(
                         }
 
                         if (proxyEntity.nekoBean != null) {
-                            popup.menu.removeItem(R.id.action_group_configuration)
+                            popup.menu.findItem(R.id.action_group_configuration).subMenu?.apply {
+                                removeItem(R.id.action_config_export_clipboard)
+                                removeItem(R.id.action_config_export_file)
+                            }
                         }
 
                         popup.setOnMenuItemClickListener(this@ConfigurationHolder)
