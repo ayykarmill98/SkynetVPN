@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.LockOpen
@@ -59,19 +60,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.skyvpn.app.domain.model.VPNConfig
 import com.skyvpn.app.util.ClipboardUtils
+import com.skyvpn.app.util.ConfigParser
 import com.skyvpn.app.util.ShareUtils
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConfigListScreen(
     viewModel: ConfigListViewModel,
-    onNavigateBack: () -> Unit,
-    onConfigSelected: (Long) -> Unit
+    onNavigateBack: () -> Unit
 ) {
     val configs by viewModel.filteredConfigs.collectAsState()
+    val allConfigs by viewModel.configs.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val importMessage by viewModel.importMessage.collectAsState()
+    val selectedConfigId by viewModel.selectedConfigId.collectAsState()
 
     var isSearchActive by remember { mutableStateOf(false) }
     var showImportDialog by remember { mutableStateOf(false) }
@@ -79,6 +82,8 @@ fun ConfigListScreen(
     var editingConfig by remember { mutableStateOf<VPNConfig?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+    val selectedConfig = allConfigs.firstOrNull { it.id == selectedConfigId }
+    val selectedConfigError = selectedConfig?.let { ConfigParser.getValidationError(it) }
 
     LaunchedEffect(importMessage) {
         val message = importMessage ?: return@LaunchedEffect
@@ -125,6 +130,12 @@ fun ConfigListScreen(
                 ) {}
             }
 
+            ActiveConfigBanner(
+                config = selectedConfig?.takeIf { selectedConfigError == null },
+                error = selectedConfigError,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            )
+
             if (configs.isEmpty() && !isLoading) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
@@ -157,12 +168,14 @@ fun ConfigListScreen(
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(configs, key = { it.id }) { config ->
+                    items(configs) { config ->
+                        val validationError = ConfigParser.getValidationError(config)
                         ConfigCard(
                             config = config,
+                            isSelected = config.id == selectedConfigId && validationError == null,
+                            validationError = validationError,
                             onClick = {
                                 viewModel.selectConfig(config.id)
-                                onConfigSelected(config.id)
                             },
                             onDelete = { viewModel.deleteConfig(config) },
                             onPin = { viewModel.togglePin(config.id, !config.isPinned) },
@@ -192,7 +205,7 @@ fun ConfigListScreen(
                         modifier = Modifier.fillMaxWidth(),
                         minLines = 4,
                         maxLines = 8,
-                        placeholder = { Text("Paste vmess://, vless://, trojan://, ss://, socks://, or http:// config") }
+                        placeholder = { Text("Paste configs or subscription URL") }
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     TextButton(
@@ -239,6 +252,8 @@ fun ConfigListScreen(
 @Composable
 private fun ConfigCard(
     config: VPNConfig,
+    isSelected: Boolean,
+    validationError: String?,
     onClick: () -> Unit,
     onDelete: () -> Unit,
     onPin: () -> Unit,
@@ -252,7 +267,13 @@ private fun ConfigCard(
             .animateContentSize()
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
+            containerColor = if (isSelected) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else if (validationError != null) {
+                MaterialTheme.colorScheme.errorContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            }
         ),
         shape = RoundedCornerShape(12.dp)
     ) {
@@ -265,7 +286,7 @@ private fun ConfigCard(
             Icon(
                 Icons.Default.Shield,
                 contentDescription = null,
-                tint = if (config.isLocked)
+                tint = if (config.isLocked || validationError != null)
                     MaterialTheme.colorScheme.error
                 else
                     MaterialTheme.colorScheme.primary,
@@ -279,6 +300,15 @@ private fun ConfigCard(
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium
                     )
+                    if (isSelected) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            Icons.Default.CheckCircle,
+                            contentDescription = "Active",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                     if (config.isPinned) {
                         Spacer(modifier = Modifier.width(4.dp))
                         Icon(
@@ -296,13 +326,32 @@ private fun ConfigCard(
                             color = MaterialTheme.colorScheme.error
                         )
                     }
+                    if (validationError != null) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "INVALID",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+                if (isSelected) {
+                    Text(
+                        text = "ACTIVE",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
                 }
                 Text(
-                    text = if (config.isLocked) "Config locked" else "${config.protocol.name} | ${config.address}:${config.port}",
+                    text = when {
+                        config.isLocked -> "Config locked"
+                        validationError != null -> "Invalid config: $validationError"
+                        else -> "${config.protocol.name} | ${config.address}:${config.port}"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )
-                if (!config.isLocked && config.transportType != com.skyvpn.app.domain.model.TransportType.TCP) {
+                if (!config.isLocked && validationError == null && config.transportType != com.skyvpn.app.domain.model.TransportType.TCP) {
                     Text(
                         text = "${config.transportType.name} + ${config.security.name}",
                         style = MaterialTheme.typography.bodySmall,
@@ -345,6 +394,53 @@ private fun ConfigCard(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActiveConfigBanner(
+    config: VPNConfig?,
+    error: String?,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
+        ),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.CheckCircle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Active Config",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                )
+                Text(
+                    text = when {
+                        config != null -> config.name.ifBlank { "Unnamed" }
+                        error != null -> "Selected config is invalid: $error"
+                        else -> "No config selected"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
             }
         }
     }

@@ -39,8 +39,12 @@ class ConfigListViewModel @Inject constructor(
     private val _importMessage = MutableStateFlow<String?>(null)
     val importMessage: StateFlow<String?> = _importMessage.asStateFlow()
 
+    private val _selectedConfigId = MutableStateFlow(-1L)
+    val selectedConfigId: StateFlow<Long> = _selectedConfigId.asStateFlow()
+
     init {
         loadConfigs()
+        observeSelectedConfig()
     }
 
     private fun loadConfigs() {
@@ -62,13 +66,26 @@ class ConfigListViewModel @Inject constructor(
             _isLoading.value = true
             _importMessage.value = null
             try {
-                val configs = ConfigParser.parseConfigs(text)
+                val sourceText = text.trim()
+                val importText = if (looksLikeRemoteConfigUrl(sourceText)) {
+                    withContext(Dispatchers.IO) {
+                        readRemoteText(sourceText)
+                    }
+                } else {
+                    text
+                }
+                val configs = withContext(Dispatchers.Default) {
+                    ConfigParser.parseConfigs(importText)
+                }
                 var firstInsertedId: Long? = null
                 configs.forEach { config ->
                     val id = configRepository.insertConfig(config)
                     if (firstInsertedId == null) firstInsertedId = id
                 }
-                firstInsertedId?.let { settingsRepository.setLastUsedConfigId(it) }
+                firstInsertedId?.let {
+                    settingsRepository.setLastUsedConfigId(it)
+                    _selectedConfigId.value = it
+                }
                 _importMessage.value = if (configs.isEmpty()) {
                     "No valid config found"
                 } else {
@@ -89,15 +106,20 @@ class ConfigListViewModel @Inject constructor(
             _importMessage.value = null
             try {
                 val response = withContext(Dispatchers.IO) {
-                    java.net.URL(url).readText()
+                    readRemoteText(url)
                 }
-                val configs = ConfigParser.parseConfigs(response)
+                val configs = withContext(Dispatchers.Default) {
+                    ConfigParser.parseConfigs(response)
+                }
                 var firstInsertedId: Long? = null
                 configs.forEach { config ->
                     val id = configRepository.insertConfig(config)
                     if (firstInsertedId == null) firstInsertedId = id
                 }
-                firstInsertedId?.let { settingsRepository.setLastUsedConfigId(it) }
+                firstInsertedId?.let {
+                    settingsRepository.setLastUsedConfigId(it)
+                    _selectedConfigId.value = it
+                }
                 _importMessage.value = if (configs.isEmpty()) {
                     "No valid config found"
                 } else {
@@ -114,13 +136,36 @@ class ConfigListViewModel @Inject constructor(
 
     fun selectConfig(id: Long) {
         viewModelScope.launch {
+            val selectedConfig = _configs.value.firstOrNull { it.id == id }
+            val validationError = selectedConfig?.let { ConfigParser.getValidationError(it) }
+            if (selectedConfig == null || validationError != null) {
+                _importMessage.value = "Invalid config${validationError?.let { ": $it" }.orEmpty()}"
+                return@launch
+            }
             settingsRepository.setLastUsedConfigId(id)
+            _selectedConfigId.value = id
+            val selectedName = selectedConfig.name.ifBlank { "Unnamed" }
+            _importMessage.value = "Selected $selectedName"
         }
     }
 
     fun deleteConfig(config: VPNConfig) {
         viewModelScope.launch {
             configRepository.deleteConfig(config)
+            if (_selectedConfigId.value == config.id) {
+                val nextConfig = _configs.value
+                    .filterNot { it.id == config.id }
+                    .filter { ConfigParser.getValidationError(it) == null }
+                    .let { configs -> configs.firstOrNull { it.isPinned } ?: configs.firstOrNull() }
+                val nextId = nextConfig?.id ?: -1L
+                settingsRepository.setLastUsedConfigId(nextId)
+                _selectedConfigId.value = nextId
+                _importMessage.value = if (nextConfig == null) {
+                    "No config selected"
+                } else {
+                    "Selected ${nextConfig.name.ifBlank { "Unnamed" }}"
+                }
+            }
         }
     }
 
@@ -163,5 +208,27 @@ class ConfigListViewModel @Inject constructor(
                 config.address.contains(cleanQuery, ignoreCase = true) ||
                 config.protocol.name.contains(cleanQuery, ignoreCase = true)
         }
+    }
+
+    private fun observeSelectedConfig() {
+        viewModelScope.launch {
+            settingsRepository.getSettings().collect { settings ->
+                _selectedConfigId.value = settings.lastUsedConfigId
+            }
+        }
+    }
+
+    private fun looksLikeRemoteConfigUrl(text: String): Boolean {
+        if (text.lineSequence().count() != 1) return false
+        return text.startsWith("http://", ignoreCase = true) ||
+            text.startsWith("https://", ignoreCase = true)
+    }
+
+    private fun readRemoteText(url: String): String {
+        val connection = java.net.URL(url).openConnection().apply {
+            connectTimeout = 15000
+            readTimeout = 30000
+        }
+        return connection.getInputStream().bufferedReader().use { it.readText() }
     }
 }

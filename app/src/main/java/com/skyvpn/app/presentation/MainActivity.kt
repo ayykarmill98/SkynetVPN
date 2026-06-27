@@ -131,10 +131,7 @@ class MainActivity : ComponentActivity() {
                             val viewModel: ConfigListViewModel = hiltViewModel()
                             ConfigListScreen(
                                 viewModel = viewModel,
-                                onNavigateBack = { navController.popBackStack() },
-                                onConfigSelected = { configId ->
-                                    handleConnect(configId)
-                                }
+                                onNavigateBack = { navController.popBackStack() }
                             )
                         }
                         composable("settings") {

@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import com.skyvpn.app.domain.model.ConnectionState
 import com.skyvpn.app.domain.model.ConnectionStatus
 import com.skyvpn.app.domain.model.VPNConfig
+import com.skyvpn.app.util.ConfigParser
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,13 +66,14 @@ fun HomeScreen(
 
     LaunchedEffect(configs, lastUsedConfigId, connectionState.activeConfig?.id) {
         val selectedId = selectedConfig?.id
-        val preferredConfig = connectionState.activeConfig
-            ?: configs.firstOrNull { it.id == lastUsedConfigId }
-            ?: configs.firstOrNull { it.isPinned }
-            ?: configs.firstOrNull()
+        val validConfigs = configs.filter { ConfigParser.getValidationError(it) == null }
+        val preferredConfig = connectionState.activeConfig?.takeIf { ConfigParser.getValidationError(it) == null }
+            ?: validConfigs.firstOrNull { it.id == lastUsedConfigId }
+            ?: validConfigs.firstOrNull { it.isPinned }
+            ?: validConfigs.firstOrNull()
         if (selectedId == null ||
-            configs.none { it.id == selectedId } ||
-            (preferredConfig != null && selectedId != preferredConfig.id)
+            validConfigs.none { it.id == selectedId } ||
+            (preferredConfig != null && selectedConfig != preferredConfig)
         ) {
             selectedConfig = preferredConfig
         }
@@ -136,9 +138,9 @@ fun HomeScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Config List", style = MaterialTheme.typography.titleMedium)
+                Text("Selected Config", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "View All",
+                    "Change",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.clickable { onNavigateConfigs() }
@@ -159,7 +161,7 @@ fun HomeScreen(
                     ConfigItem(
                         config = selectedConfig!!,
                         isSelected = connectionState.activeConfig?.id == selectedConfig?.id,
-                        onClick = { selectedConfig = it }
+                        onClick = onNavigateConfigs
                     )
                 } else {
                     Row(
@@ -369,12 +371,12 @@ private fun StatItem(label: String, value: String) {
 private fun ConfigItem(
     config: VPNConfig,
     isSelected: Boolean,
-    onClick: (VPNConfig) -> Unit
+    onClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onClick(config) }
+            .clickable { onClick() }
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

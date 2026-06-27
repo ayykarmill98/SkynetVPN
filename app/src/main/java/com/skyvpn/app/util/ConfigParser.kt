@@ -49,7 +49,7 @@ object ConfigParser {
                     null
                 }
             }
-            config?.takeIf { isValidConfig(it) }
+            config?.takeIf { getValidationError(it) == null }
         } catch (e: Exception) {
             Timber.e(e, "Error parsing config")
             null
@@ -266,14 +266,17 @@ object ConfigParser {
     private fun kotlinx.serialization.json.JsonObject.jsonInt(key: String): Int? =
         get(key)?.jsonPrimitive?.intOrNull
 
-    private fun isValidConfig(config: VPNConfig): Boolean {
-        if (config.address.isBlank()) return false
-        if (config.port !in 1..65535) return false
+    fun getValidationError(config: VPNConfig): String? {
+        if (config.address.isBlank()) return "server address is empty"
+        if (config.port !in 1..65535) return "server port is invalid"
         return when (config.protocol) {
-            VPNProtocol.VMESS, VPNProtocol.VLESS -> config.uuid.isNotBlank()
-            VPNProtocol.TROJAN -> config.password.isNotBlank()
-            VPNProtocol.SHADOWSOCKS -> config.method.isNotBlank()
-            VPNProtocol.SOCKS, VPNProtocol.HTTP -> true
+            VPNProtocol.VMESS, VPNProtocol.VLESS ->
+                if (config.uuid.isBlank()) "UUID is empty" else null
+            VPNProtocol.TROJAN ->
+                if (config.password.isBlank()) "password is empty" else null
+            VPNProtocol.SHADOWSOCKS ->
+                if (config.method.isBlank() || config.password.isBlank()) "Shadowsocks credentials are incomplete" else null
+            VPNProtocol.SOCKS, VPNProtocol.HTTP -> null
         }
     }
 
