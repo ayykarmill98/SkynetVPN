@@ -38,12 +38,15 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SearchBar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -68,14 +71,23 @@ fun ConfigListScreen(
     val configs by viewModel.filteredConfigs.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val importMessage by viewModel.importMessage.collectAsState()
 
     var isSearchActive by remember { mutableStateOf(false) }
     var showImportDialog by remember { mutableStateOf(false) }
     var importText by remember { mutableStateOf("") }
     var editingConfig by remember { mutableStateOf<VPNConfig?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
 
+    LaunchedEffect(importMessage) {
+        val message = importMessage ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(message)
+        viewModel.clearImportMessage()
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Configs (${configs.size})") },
@@ -148,7 +160,10 @@ fun ConfigListScreen(
                     items(configs, key = { it.id }) { config ->
                         ConfigCard(
                             config = config,
-                            onClick = { onConfigSelected(config.id) },
+                            onClick = {
+                                viewModel.selectConfig(config.id)
+                                onConfigSelected(config.id)
+                            },
                             onDelete = { viewModel.deleteConfig(config) },
                             onPin = { viewModel.togglePin(config.id, !config.isPinned) },
                             onEdit = { editingConfig = config },
@@ -196,9 +211,9 @@ fun ConfigListScreen(
                         importText = ""
                         showImportDialog = false
                     },
-                    enabled = importText.isNotBlank()
+                    enabled = importText.isNotBlank() && !isLoading
                 ) {
-                    Text("Import")
+                    Text(if (isLoading) "Importing..." else "Import")
                 }
             },
             dismissButton = {

@@ -30,9 +30,13 @@ class HomeViewModel @Inject constructor(
     private val _isAutoReconnecting = MutableStateFlow(false)
     val isAutoReconnecting: StateFlow<Boolean> = _isAutoReconnecting.asStateFlow()
 
+    private val _lastUsedConfigId = MutableStateFlow(-1L)
+    val lastUsedConfigId: StateFlow<Long> = _lastUsedConfigId.asStateFlow()
+
     init {
         loadConfigs()
         observeReconnect()
+        observeSettings()
     }
 
     private fun loadConfigs() {
@@ -47,6 +51,14 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             reconnectManager.isReconnecting.collect {
                 _isAutoReconnecting.value = it
+            }
+        }
+    }
+
+    private fun observeSettings() {
+        viewModelScope.launch {
+            settingsRepository.getSettings().collect { settings ->
+                _lastUsedConfigId.value = settings.lastUsedConfigId
             }
         }
     }

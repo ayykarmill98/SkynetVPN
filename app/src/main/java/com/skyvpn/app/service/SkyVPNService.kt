@@ -130,6 +130,19 @@ class SkyVPNService : VpnService() {
             return
         }
 
+        val configError = config.validationError()
+        if (configError != null) {
+            publishState(_connectionState.value.copy(
+                status = ConnectionStatus.ERROR,
+                errorMessage = configError
+            ))
+            addLog(LogLevel.ERROR, "Service", configError)
+            releaseWakeLock()
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return
+        }
+
         currentConfigId = configId
         settingsRepository.setLastUsedConfigId(configId)
 
@@ -403,6 +416,22 @@ class SkyVPNService : VpnService() {
             vpnInterface != null ||
             TUNManager.isTunActive() ||
             XrayCoreManager.isRunning.value
+    }
+
+    private fun VPNConfig.validationError(): String? {
+        if (address.isBlank()) return "Config server address is empty"
+        if (port !in 1..65535) return "Config server port is invalid"
+        return when (protocol) {
+            com.skyvpn.app.domain.model.VPNProtocol.VMESS,
+            com.skyvpn.app.domain.model.VPNProtocol.VLESS ->
+                if (uuid.isBlank()) "Config UUID is empty" else null
+            com.skyvpn.app.domain.model.VPNProtocol.TROJAN ->
+                if (password.isBlank()) "Config password is empty" else null
+            com.skyvpn.app.domain.model.VPNProtocol.SHADOWSOCKS ->
+                if (method.isBlank() || password.isBlank()) "Config Shadowsocks credentials are incomplete" else null
+            com.skyvpn.app.domain.model.VPNProtocol.SOCKS,
+            com.skyvpn.app.domain.model.VPNProtocol.HTTP -> null
+        }
     }
 
     private suspend fun autoConnectLastConfig() {

@@ -113,9 +113,11 @@ class MainActivity : ComponentActivity() {
                         composable("home") {
                             val viewModel: HomeViewModel = hiltViewModel()
                             val configs by viewModel.configs.collectAsState()
+                            val lastUsedConfigId by viewModel.lastUsedConfigId.collectAsState()
                             HomeScreen(
                                 connectionState = viewModel.connectionState.collectAsState().value,
                                 configs = configs,
+                                lastUsedConfigId = lastUsedConfigId,
                                 onConnect = { configId -> handleConnect(configId) },
                                 onDisconnect = { handleDisconnect() },
                                 onNavigateConfigs = { navController.navigate("configs") },

@@ -21,16 +21,11 @@ class ImportConfigUseCase @Inject constructor(
 
     suspend fun importMultiple(rawConfigs: String): Result<Int> {
         return try {
-            val lines = rawConfigs.lines().map { it.trim() }.filter { it.isNotEmpty() }
-            var count = 0
-            lines.forEach { line ->
-                val config = ConfigParser.parseConfig(line)
-                if (config != null) {
-                    repository.insertConfig(config)
-                    count++
-                }
+            val configs = ConfigParser.parseConfigs(rawConfigs)
+            configs.forEach { config ->
+                repository.insertConfig(config)
             }
-            Result.success(count)
+            Result.success(configs.size)
         } catch (e: Exception) {
             Result.failure(e)
         }

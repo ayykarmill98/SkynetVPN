@@ -52,6 +52,7 @@ import com.skyvpn.app.domain.model.VPNConfig
 fun HomeScreen(
     connectionState: ConnectionState,
     configs: List<VPNConfig>,
+    lastUsedConfigId: Long,
     onConnect: (Long) -> Unit,
     onDisconnect: () -> Unit,
     onNavigateConfigs: () -> Unit,
@@ -62,10 +63,17 @@ fun HomeScreen(
 ) {
     var selectedConfig by remember { mutableStateOf<VPNConfig?>(null) }
 
-    LaunchedEffect(configs) {
+    LaunchedEffect(configs, lastUsedConfigId, connectionState.activeConfig?.id) {
         val selectedId = selectedConfig?.id
-        if (selectedId == null || configs.none { it.id == selectedId }) {
-            selectedConfig = configs.firstOrNull { it.isPinned } ?: configs.firstOrNull()
+        val preferredConfig = connectionState.activeConfig
+            ?: configs.firstOrNull { it.id == lastUsedConfigId }
+            ?: configs.firstOrNull { it.isPinned }
+            ?: configs.firstOrNull()
+        if (selectedId == null ||
+            configs.none { it.id == selectedId } ||
+            (preferredConfig != null && selectedId != preferredConfig.id)
+        ) {
+            selectedConfig = preferredConfig
         }
     }
 
