@@ -166,12 +166,18 @@ class SkyVPNService : VpnService() {
         }
 
         if (settings.perAppVPN && settings.selectedApps.isNotEmpty()) {
-            settings.selectedApps.forEach { pkg ->
+            settings.selectedApps.filterNot { it == packageName }.forEach { pkg ->
                 try {
                     builder.addAllowedApplication(pkg)
                 } catch (e: Exception) {
                     Timber.w("Failed to add app: $pkg")
                 }
+            }
+        } else {
+            try {
+                builder.addDisallowedApplication(packageName)
+            } catch (e: Exception) {
+                Timber.w(e, "Failed to exclude SkynetVPN from VPN routing")
             }
         }
 

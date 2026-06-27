@@ -2,8 +2,11 @@ package com.skyvpn.app.core
 
 import android.content.Context
 import android.os.ParcelFileDescriptor
+import android.system.Os
+import android.system.OsConstants
 import timber.log.Timber
 import java.io.File
+import java.io.FileDescriptor
 import java.util.concurrent.TimeUnit
 
 object TUNManager {
@@ -35,15 +38,16 @@ object TUNManager {
         }
 
         return try {
-            tunFd = ParcelFileDescriptor.dup(vpnInterface.fileDescriptor)
-            val fd = tunFd!!.detachFd()
+            val duplicatedTun = ParcelFileDescriptor.dup(vpnInterface.fileDescriptor)
+            clearCloseOnExec(duplicatedTun.fileDescriptor)
+            tunFd = duplicatedTun
+            val fd = duplicatedTun.detachFd()
             tunProcess = ProcessBuilder(
                 executable.absolutePath,
-                "--tunfd", fd.toString(),
-                "--tunmtu", mtu.toString(),
-                "--socks-server-addr", "$socksHost:$socksPort",
-                "--netif-ipaddr", "10.10.10.2",
-                "--netif-netmask", "255.255.255.0"
+                "--device", "fd://$fd",
+                "--proxy", "socks5://$socksHost:$socksPort",
+                "--mtu", mtu.toString(),
+                "--loglevel", "info"
             )
                 .redirectErrorStream(true)
                 .start()
@@ -51,7 +55,12 @@ object TUNManager {
             Thread.sleep(500)
             isActive = tunProcess?.isAlive == true
             if (!isActive) {
-                lastError = "tun2socks process exited immediately"
+                val output = readProcessOutput(tunProcess)
+                lastError = if (output.isNotBlank()) {
+                    "tun2socks exited: ${output.takeLast(240)}"
+                } else {
+                    "tun2socks process exited immediately"
+                }
                 Timber.e(lastError)
             } else {
                 lastError = null
@@ -89,5 +98,27 @@ object TUNManager {
     private fun findNativeExecutable(context: Context, libraryName: String): File? {
         val nativeDir = context.applicationInfo.nativeLibraryDir ?: return null
         return File(nativeDir, libraryName).takeIf { it.exists() }
+    }
+
+    private fun clearCloseOnExec(fileDescriptor: FileDescriptor) {
+        runCatching {
+            val flags = Os.fcntlInt(fileDescriptor, OsConstants.F_GETFD, 0)
+            Os.fcntlInt(fileDescriptor, OsConstants.F_SETFD, flags and OsConstants.FD_CLOEXEC.inv())
+        }.onFailure {
+            Timber.w(it, "Failed to clear close-on-exec for TUN fd")
+        }
+    }
+
+    private fun readProcessOutput(process: Process?): String {
+        if (process == null) return ""
+        return runCatching {
+            process.inputStream.bufferedReader().use { reader ->
+                reader.readText()
+                    .lineSequence()
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+                    .joinToString(" ")
+            }
+        }.getOrDefault("")
     }
 }
