@@ -192,11 +192,12 @@ class SkyVPNService : VpnService() {
 
         val xrayStarted = XrayCoreManager.start(config, xrayConfig)
         if (!xrayStarted) {
+            val errorMessage = XrayCoreManager.getLastError() ?: "Failed to start Xray core"
             publishState(_connectionState.value.copy(
                 status = ConnectionStatus.ERROR,
-                errorMessage = "Failed to start Xray core"
+                errorMessage = errorMessage
             ))
-            addLog(LogLevel.ERROR, "Xray", "Failed to start")
+            addLog(LogLevel.ERROR, "Xray", errorMessage)
             stopVpn()
             stopSelf()
             return
@@ -208,11 +209,12 @@ class SkyVPNService : VpnService() {
             socksPort = XrayCoreManager.LOCAL_SOCKS_PORT
         )
         if (!tunStarted) {
+            val errorMessage = TUNManager.getLastError() ?: "Failed to start tun2socks"
             publishState(_connectionState.value.copy(
                 status = ConnectionStatus.ERROR,
-                errorMessage = "Failed to start tun2socks"
+                errorMessage = errorMessage
             ))
-            addLog(LogLevel.ERROR, "TUN", "Failed to start tun2socks")
+            addLog(LogLevel.ERROR, "TUN", errorMessage)
             stopVpn()
             stopSelf()
             return

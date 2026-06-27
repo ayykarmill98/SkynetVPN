@@ -15,6 +15,7 @@ object TUNManager {
     private var tunProcess: Process? = null
     private var binaryFile: File? = null
     private var isActive = false
+    private var lastError: String? = null
 
     fun initialize(context: Context) {
         this.context = context.applicationContext
@@ -23,6 +24,7 @@ object TUNManager {
             assetName = "tun2socks",
             targetName = "tun2socks"
         )
+        lastError = if (binaryFile == null) "tun2socks binary missing for this device ABI" else null
     }
 
     fun start(
@@ -33,7 +35,8 @@ object TUNManager {
     ): Boolean {
         stop()
         val executable = binaryFile ?: run {
-            Timber.e("tun2socks binary is missing. Add assets/tun2socks/<abi>/tun2socks")
+            lastError = "tun2socks binary missing. Add assets/tun2socks/<abi>/tun2socks"
+            Timber.e(lastError)
             return false
         }
 
@@ -54,10 +57,14 @@ object TUNManager {
             Thread.sleep(500)
             isActive = tunProcess?.isAlive == true
             if (!isActive) {
-                Timber.e("tun2socks process exited immediately")
+                lastError = "tun2socks process exited immediately"
+                Timber.e(lastError)
+            } else {
+                lastError = null
             }
             isActive
         } catch (e: Exception) {
+            lastError = e.message ?: "Failed to start tun2socks"
             Timber.e(e, "Failed to start tun2socks")
             false
         }
@@ -82,6 +89,8 @@ object TUNManager {
     }
 
     fun isTunActive(): Boolean = isActive
+
+    fun getLastError(): String? = lastError
 
     private fun extractExecutable(context: Context, assetName: String, targetName: String): File? {
         val abiAsset = Build.SUPPORTED_ABIS

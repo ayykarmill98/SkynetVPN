@@ -23,6 +23,7 @@ object XrayCoreManager {
     private var coreProcess: Process? = null
     private var configDir: File? = null
     private var binaryFile: File? = null
+    private var lastError: String? = null
 
     fun initialize(context: Context) {
         configDir = File(context.filesDir, "xray")
@@ -32,6 +33,7 @@ object XrayCoreManager {
             assetName = "xray",
             targetName = "xray"
         )
+        lastError = if (binaryFile == null) "Xray binary missing for this device ABI" else null
         Timber.d("XrayCoreManager initialized, configDir: ${configDir?.absolutePath}")
     }
 
@@ -334,12 +336,14 @@ object XrayCoreManager {
         return try {
             stop()
             val executable = binaryFile ?: run {
-                Timber.e("Xray binary is missing. Add assets/xray/<abi>/xray")
+                lastError = "Xray binary missing. Add assets/xray/<abi>/xray"
+                Timber.e(lastError)
                 _isRunning.value = false
                 return false
             }
             val directory = configDir ?: run {
-                Timber.e("Xray config directory is not initialized")
+                lastError = "Xray config directory is not initialized"
+                Timber.e(lastError)
                 _isRunning.value = false
                 return false
             }
@@ -357,15 +361,18 @@ object XrayCoreManager {
 
             kotlinx.coroutines.delay(500)
             if (!isProcessAlive()) {
-                Timber.e("Xray process exited immediately for ${config.address}:${config.port}")
+                lastError = "Xray process exited immediately for ${config.address}:${config.port}"
+                Timber.e(lastError)
                 _isRunning.value = false
                 return false
             }
 
+            lastError = null
             _isRunning.value = true
             Timber.i("Xray core started for ${config.address}:${config.port}")
             true
         } catch (e: Exception) {
+            lastError = e.message ?: "Failed to start Xray core"
             Timber.e(e, "Failed to start Xray core")
             _isRunning.value = false
             false
@@ -389,6 +396,8 @@ object XrayCoreManager {
     }
 
     fun isProcessAlive(): Boolean = coreProcess?.isAlive == true
+
+    fun getLastError(): String? = lastError
 
     private fun extractExecutable(context: Context, assetName: String, targetName: String): File? {
         val abiAsset = Build.SUPPORTED_ABIS
