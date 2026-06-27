@@ -33,6 +33,8 @@ object XrayCoreManager {
             assetName = "xray",
             targetName = "xray"
         )
+        copyAssetIfExists(context, "xray", "geoip.dat")
+        copyAssetIfExists(context, "xray", "geosite.dat")
         lastError = if (binaryFile == null) "Xray binary missing for this device ABI" else null
         Timber.d("XrayCoreManager initialized, configDir: ${configDir?.absolutePath}")
     }
@@ -356,6 +358,7 @@ object XrayCoreManager {
                 "-config",
                 configFile.absolutePath
             )
+                .directory(directory)
                 .redirectErrorStream(true)
                 .start()
 
@@ -421,5 +424,26 @@ object XrayCoreManager {
             return null
         }
         return target
+    }
+
+    private fun copyAssetIfExists(context: Context, assetName: String, fileName: String) {
+        val directory = configDir ?: return
+        val abiAsset = Build.SUPPORTED_ABIS
+            .asSequence()
+            .map { "$assetName/$it/$fileName" }
+            .firstOrNull { assetPath ->
+                runCatching { context.assets.open(assetPath).close() }.isSuccess
+            }
+            ?: return
+
+        runCatching {
+            context.assets.open(abiAsset).use { input ->
+                FileOutputStream(File(directory, fileName)).use { output ->
+                    input.copyTo(output)
+                }
+            }
+        }.onFailure {
+            Timber.w(it, "Failed to copy $abiAsset")
+        }
     }
 }
