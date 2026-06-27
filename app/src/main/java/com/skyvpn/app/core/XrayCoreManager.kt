@@ -28,11 +28,7 @@ object XrayCoreManager {
     fun initialize(context: Context) {
         configDir = File(context.filesDir, "xray")
         configDir?.mkdirs()
-        binaryFile = extractExecutable(
-            context = context,
-            assetName = "xray",
-            targetName = "xray"
-        )
+        binaryFile = findNativeExecutable(context, "libxray.so")
         copyAssetIfExists(context, "xray", "geoip.dat")
         copyAssetIfExists(context, "xray", "geosite.dat")
         lastError = if (binaryFile == null) "Xray binary missing for this device ABI" else null
@@ -338,7 +334,7 @@ object XrayCoreManager {
         return try {
             stop()
             val executable = binaryFile ?: run {
-                lastError = "Xray binary missing. Add assets/xray/<abi>/xray"
+                lastError = "Xray binary missing. Add jniLibs/<abi>/libxray.so"
                 Timber.e(lastError)
                 _isRunning.value = false
                 return false
@@ -402,28 +398,9 @@ object XrayCoreManager {
 
     fun getLastError(): String? = lastError
 
-    private fun extractExecutable(context: Context, assetName: String, targetName: String): File? {
-        val abiAsset = Build.SUPPORTED_ABIS
-            .asSequence()
-            .map { "$assetName/$it/$targetName" }
-            .firstOrNull { assetPath ->
-                runCatching { context.assets.open(assetPath).close() }.isSuccess
-            }
-            ?: return null
-
-        val target = File(context.filesDir, "$targetName-${abiAsset.substringAfter("$assetName/").substringBefore("/")}")
-        runCatching {
-            context.assets.open(abiAsset).use { input ->
-                FileOutputStream(target).use { output ->
-                    input.copyTo(output)
-                }
-            }
-            target.setExecutable(true, true)
-        }.onFailure {
-            Timber.e(it, "Failed to extract $abiAsset")
-            return null
-        }
-        return target
+    private fun findNativeExecutable(context: Context, libraryName: String): File? {
+        val nativeDir = context.applicationInfo.nativeLibraryDir ?: return null
+        return File(nativeDir, libraryName).takeIf { it.exists() }
     }
 
     private fun copyAssetIfExists(context: Context, assetName: String, fileName: String) {
