@@ -116,7 +116,7 @@ jobs:
           else
             GOMOBILE_TARGET="android"
           fi
-          gomobile bind -o "$GITHUB_WORKSPACE/app/libs/tun2socks.aar" -target "$GOMOBILE_TARGET" ./engine
+          gomobile bind -o "$GITHUB_WORKSPACE/app/libs/tun2socks.aar" -target "$GOMOBILE_TARGET" -androidapi 26 ./engine
           test -f "$GITHUB_WORKSPACE/app/libs/tun2socks.aar"
 
       - name: Download VPN core binaries
