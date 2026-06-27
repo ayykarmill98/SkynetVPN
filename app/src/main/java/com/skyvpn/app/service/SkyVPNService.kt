@@ -104,10 +104,10 @@ class SkyVPNService : VpnService() {
                 }
                 ACTION_DISCONNECT -> {
                     connectJob?.cancel()
-                    serviceScope.launch { disconnect(stopSelfWhenDone = false) }
+                    launchSafely("disconnect") { disconnect(stopSelfWhenDone = false) }
                 }
                 ACTION_RECONNECT -> {
-                    serviceScope.launch { reconnect() }
+                    launchSafely("reconnect") { reconnect() }
                 }
                 ACTION_AUTO_CONNECT -> {
                     Timber.i("Ignoring auto-connect request in manual-safe mode")
@@ -124,7 +124,7 @@ class SkyVPNService : VpnService() {
 
     private fun startConnect(configId: Long) {
         connectJob?.cancel()
-        val newJob = serviceScope.launch {
+        val newJob = launchSafely("connect") {
             try {
                 connect(configId)
             } catch (e: CancellationException) {
@@ -143,6 +143,30 @@ class SkyVPNService : VpnService() {
         newJob.invokeOnCompletion {
             if (connectJob == newJob) {
                 connectJob = null
+            }
+        }
+    }
+
+    private fun launchSafely(name: String, block: suspend () -> Unit): Job {
+        return serviceScope.launch {
+            try {
+                block()
+            } catch (e: CancellationException) {
+                Timber.i("Service job cancelled: $name")
+            } catch (e: Throwable) {
+                Timber.e(e, "Service job failed: $name")
+                runCatching {
+                    publishState(_connectionState.value.copy(
+                        status = ConnectionStatus.ERROR,
+                        errorMessage = e.message ?: "Service job failed: $name"
+                    ))
+                }
+                runCatching {
+                    addLogSafely(LogLevel.ERROR, "Service", "Service job failed: $name - ${e.message}")
+                }
+                runCatching {
+                    cleanupVpnResources()
+                }
             }
         }
     }
@@ -286,6 +310,11 @@ class SkyVPNService : VpnService() {
         startForeground(SkyVPNApp.VPN_NOTIFICATION_ID, createNotification("Checking config connection..."))
 
         val health = verifyConfigConnection()
+        if (health.wasCancelled) {
+            cleanupVpnResources()
+            publishState(ConnectionState())
+            return
+        }
         if (!health.isConnected) {
             val errorMessage = health.message
             publishState(_connectionState.value.copy(
@@ -358,7 +387,7 @@ class SkyVPNService : VpnService() {
         statsBaseTx = normalizedTrafficBytes(TrafficStats.getUidTxBytes(Process.myUid()))
         lastRx = statsBaseRx
         lastTx = statsBaseTx
-        statsJob = serviceScope.launch {
+        statsJob = launchSafely("stats") {
             while (true) {
                 delay(1000)
                 val state = _connectionState.value
@@ -386,7 +415,7 @@ class SkyVPNService : VpnService() {
 
     private fun startCoreWatch() {
         coreWatchJob?.cancel()
-        coreWatchJob = serviceScope.launch {
+        coreWatchJob = launchSafely("core-watch") {
             while (true) {
                 delay(3000)
                 if (_connectionState.value.status == ConnectionStatus.CONNECTED && !XrayCoreManager.isProcessAlive()) {
@@ -458,7 +487,12 @@ class SkyVPNService : VpnService() {
             }
         } catch (e: Exception) {
             if (e is CancellationException) {
-                return@withContext ConnectionHealth(false, -1, "Connection check cancelled")
+                return@withContext ConnectionHealth(
+                    isConnected = false,
+                    latencyMs = -1,
+                    message = "Connection check cancelled",
+                    wasCancelled = true
+                )
             }
             Timber.d(e, "Health check failed for $url")
             ConnectionHealth(false, -1, e.message ?: "Failed to reach $url")
@@ -491,23 +525,24 @@ class SkyVPNService : VpnService() {
     private data class ConnectionHealth(
         val isConnected: Boolean,
         val latencyMs: Long,
-        val message: String
+        val message: String,
+        val wasCancelled: Boolean = false
     )
 
     override fun onRevoke() {
         super.onRevoke()
         connectJob?.cancel()
-        serviceScope.launch { disconnect() }
+        launchSafely("revoke-disconnect") { disconnect(stopSelfWhenDone = false) }
     }
 
     override fun onDestroy() {
         isDestroyed = true
-        reconnectManager.stopMonitoring()
-        reconnectManager.unbindService()
-        connectJob?.cancel()
-        cleanupVpnResources()
-        publishState(ConnectionState())
-        serviceScope.cancel()
+        runCatching { reconnectManager.stopMonitoring() }
+        runCatching { reconnectManager.unbindService() }
+        runCatching { connectJob?.cancel() }
+        runCatching { cleanupVpnResources() }
+        runCatching { publishState(ConnectionState()) }
+        runCatching { serviceScope.cancel() }
         super.onDestroy()
     }
 
