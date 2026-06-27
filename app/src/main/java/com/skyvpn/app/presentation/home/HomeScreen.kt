@@ -244,6 +244,17 @@ private fun StatusCard(state: ConnectionState) {
                 )
             }
 
+            if ((state.status == ConnectionStatus.CONNECTING || state.status == ConnectionStatus.RECONNECTING) &&
+                !state.errorMessage.isNullOrBlank()
+            ) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = state.errorMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f)
+                )
+            }
+
             if (state.status == ConnectionStatus.CONNECTING || state.status == ConnectionStatus.RECONNECTING) {
                 Spacer(modifier = Modifier.height(12.dp))
                 CircularProgressIndicator(

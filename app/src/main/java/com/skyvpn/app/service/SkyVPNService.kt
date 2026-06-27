@@ -36,7 +36,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import timber.log.Timber
+import java.net.HttpURLConnection
+import java.net.InetSocketAddress
+import java.net.Proxy
+import java.net.URL
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -243,12 +248,34 @@ class SkyVPNService : VpnService() {
         }
 
         publishState(_connectionState.value.copy(
+            status = ConnectionStatus.CONNECTING,
+            activeConfig = config,
+            errorMessage = "Checking internet through config..."
+        ))
+        startForeground(SkyVPNApp.VPN_NOTIFICATION_ID, createNotification("Checking config connection..."))
+
+        val health = verifyConfigConnection()
+        if (!health.isConnected) {
+            val errorMessage = health.message
+            publishState(_connectionState.value.copy(
+                status = ConnectionStatus.ERROR,
+                activeConfig = config,
+                errorMessage = errorMessage
+            ))
+            addLog(LogLevel.ERROR, "Health", errorMessage)
+            stopVpn()
+            stopSelf()
+            return
+        }
+
+        publishState(_connectionState.value.copy(
             status = ConnectionStatus.CONNECTED,
             activeConfig = config,
+            ping = health.latencyMs,
             errorMessage = null
         ))
 
-        addLog(LogLevel.INFO, "Service", "Connected to ${config.name} (${config.address}:${config.port})")
+        addLog(LogLevel.INFO, "Service", "Connected to ${config.name} (${config.address}:${config.port}), internet OK ${health.latencyMs}ms")
 
         startForeground(SkyVPNApp.VPN_NOTIFICATION_ID, createNotification("Connected to ${config.name}"))
         if (settingsRepository.getAutoReconnect()) {
@@ -346,6 +373,66 @@ class SkyVPNService : VpnService() {
         coreWatchJob = null
     }
 
+    private suspend fun verifyConfigConnection(): ConnectionHealth {
+        delay(1200)
+        val testUrls = listOf(
+            "http://connectivitycheck.gstatic.com/generate_204",
+            "http://www.gstatic.com/generate_204",
+            "https://cloudflare.com/cdn-cgi/trace",
+            "https://example.com"
+        )
+        var lastError = "Internet check failed"
+
+        repeat(3) { attempt ->
+            for (url in testUrls) {
+                val result = checkUrlThroughXrayProxy(url)
+                if (result.isConnected) return result
+                lastError = result.message
+            }
+            if (attempt < 2) delay(1500)
+        }
+
+        return ConnectionHealth(
+            isConnected = false,
+            latencyMs = -1,
+            message = "Config connected to tunnel, but internet check failed. Server, UUID/password, TLS/SNI, or network setting may be wrong. Last error: $lastError"
+        )
+    }
+
+    private suspend fun checkUrlThroughXrayProxy(url: String): ConnectionHealth = withContext(Dispatchers.IO) {
+        val start = System.currentTimeMillis()
+        val proxy = Proxy(
+            Proxy.Type.HTTP,
+            InetSocketAddress(XrayCoreManager.LOCAL_SOCKS_HOST, XrayCoreManager.LOCAL_HTTP_PORT)
+        )
+
+        try {
+            val connection = (URL(url).openConnection(proxy) as HttpURLConnection).apply {
+                connectTimeout = 6000
+                readTimeout = 6000
+                instanceFollowRedirects = false
+                requestMethod = "GET"
+                setRequestProperty("User-Agent", "SkynetVPN/1.0")
+                setRequestProperty("Connection", "close")
+            }
+            val code = connection.responseCode
+            runCatching {
+                if (code >= 400) connection.errorStream?.close() else connection.inputStream?.close()
+            }
+            connection.disconnect()
+
+            val elapsed = System.currentTimeMillis() - start
+            if (code in 200..399) {
+                ConnectionHealth(true, elapsed, "Internet OK")
+            } else {
+                ConnectionHealth(false, -1, "$url returned HTTP $code")
+            }
+        } catch (e: Exception) {
+            Timber.d(e, "Health check failed for $url")
+            ConnectionHealth(false, -1, e.message ?: "Failed to reach $url")
+        }
+    }
+
     private suspend fun addLog(level: LogLevel, tag: String, message: String) {
         logRepository.insertLog(VPNLog(level = level, tag = tag, message = message))
         Timber.log(when (level) {
@@ -368,6 +455,12 @@ class SkyVPNService : VpnService() {
         _connectionState.value = state
         connectionStateRepository.update(state)
     }
+
+    private data class ConnectionHealth(
+        val isConnected: Boolean,
+        val latencyMs: Long,
+        val message: String
+    )
 
     override fun onRevoke() {
         super.onRevoke()
