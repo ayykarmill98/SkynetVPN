@@ -308,17 +308,26 @@ private fun ConnectButton(
         modifier = Modifier
             .size(120.dp)
             .background(bgColor, CircleShape)
-            .clickable(enabled = !isConnecting) {
-                if (isConnected) onDisconnect() else if (hasConfig) onConnect()
+            .clickable {
+                if (isConnected || isConnecting) onDisconnect() else if (hasConfig) onConnect()
             },
         contentAlignment = Alignment.Center
     ) {
         if (isConnecting) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(50.dp),
-                color = MaterialTheme.colorScheme.onPrimary,
-                strokeWidth = 3.dp
-            )
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(42.dp),
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    strokeWidth = 3.dp
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "STOP",
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
         } else {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(

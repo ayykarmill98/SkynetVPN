@@ -24,6 +24,7 @@ import com.skyvpn.app.domain.model.VPNLog
 import com.skyvpn.app.domain.model.LogLevel
 import com.skyvpn.app.presentation.MainActivity
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -57,6 +58,7 @@ class SkyVPNService : VpnService() {
     private val binder = LocalBinder()
 
     private var vpnInterface: ParcelFileDescriptor? = null
+    private var connectJob: Job? = null
     private var statsJob: Job? = null
     private var coreWatchJob: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
@@ -94,10 +96,11 @@ class SkyVPNService : VpnService() {
             ACTION_CONNECT -> {
                 val configId = intent.getLongExtra(EXTRA_CONFIG_ID, -1)
                 if (configId > 0) {
-                    serviceScope.launch { connect(configId) }
+                    startConnect(configId)
                 }
             }
             ACTION_DISCONNECT -> {
+                connectJob?.cancel()
                 serviceScope.launch { disconnect() }
             }
             ACTION_RECONNECT -> {
@@ -108,6 +111,17 @@ class SkyVPNService : VpnService() {
             }
         }
         return START_STICKY
+    }
+
+    private fun startConnect(configId: Long) {
+        connectJob?.cancel()
+        val newJob = serviceScope.launch { connect(configId) }
+        connectJob = newJob
+        newJob.invokeOnCompletion {
+            if (connectJob == newJob) {
+                connectJob = null
+            }
+        }
     }
 
     private suspend fun connect(configId: Long) {
@@ -374,22 +388,21 @@ class SkyVPNService : VpnService() {
     }
 
     private suspend fun verifyConfigConnection(): ConnectionHealth {
-        delay(1200)
+        delay(800)
         val testUrls = listOf(
             "http://connectivitycheck.gstatic.com/generate_204",
-            "http://www.gstatic.com/generate_204",
-            "https://cloudflare.com/cdn-cgi/trace",
+            "http://cp.cloudflare.com/generate_204",
             "https://example.com"
         )
         var lastError = "Internet check failed"
 
-        repeat(3) { attempt ->
+        repeat(2) { attempt ->
             for (url in testUrls) {
                 val result = checkUrlThroughXrayProxy(url)
                 if (result.isConnected) return result
                 lastError = result.message
             }
-            if (attempt < 2) delay(1500)
+            if (attempt < 1) delay(1000)
         }
 
         return ConnectionHealth(
@@ -408,8 +421,8 @@ class SkyVPNService : VpnService() {
 
         try {
             val connection = (URL(url).openConnection(proxy) as HttpURLConnection).apply {
-                connectTimeout = 6000
-                readTimeout = 6000
+                connectTimeout = 3500
+                readTimeout = 3500
                 instanceFollowRedirects = false
                 requestMethod = "GET"
                 setRequestProperty("User-Agent", "SkynetVPN/1.0")
@@ -428,6 +441,7 @@ class SkyVPNService : VpnService() {
                 ConnectionHealth(false, -1, "$url returned HTTP $code")
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Timber.d(e, "Health check failed for $url")
             ConnectionHealth(false, -1, e.message ?: "Failed to reach $url")
         }
@@ -464,6 +478,7 @@ class SkyVPNService : VpnService() {
 
     override fun onRevoke() {
         super.onRevoke()
+        connectJob?.cancel()
         serviceScope.launch { disconnect() }
     }
 
@@ -471,6 +486,7 @@ class SkyVPNService : VpnService() {
         isDestroyed = true
         reconnectManager.stopMonitoring()
         reconnectManager.unbindService()
+        connectJob?.cancel()
         cleanupVpnResources()
         publishState(ConnectionState())
         serviceScope.cancel()
