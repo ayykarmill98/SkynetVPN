@@ -98,6 +98,8 @@ class SkyVPNService : VpnService() {
                     val configId = intent.getLongExtra(EXTRA_CONFIG_ID, -1)
                     if (configId > 0) {
                         startConnect(configId)
+                    } else {
+                        Timber.w("Ignoring connect request without valid config id")
                     }
                 }
                 ACTION_DISCONNECT -> {
@@ -109,6 +111,9 @@ class SkyVPNService : VpnService() {
                 }
                 ACTION_AUTO_CONNECT -> {
                     Timber.i("Ignoring auto-connect request in manual-safe mode")
+                }
+                else -> {
+                    Timber.w("Ignoring unknown service action: ${intent.action}")
                 }
             }
         }.onFailure {
