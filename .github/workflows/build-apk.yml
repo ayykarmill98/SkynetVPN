@@ -69,6 +69,9 @@ jobs:
       BUILD_TYPE: ${{ inputs.build_type || (startsWith(github.ref, 'refs/tags/') && 'release' || 'debug') }}
       TARGET_ABI: ${{ matrix.abi }}
       GRADLE_VERSION: 8.5
+      NDK_VERSION: 26.1.10909125
+      NDK_ARCHIVE_URL: https://dl.google.com/android/repository/android-ndk-r26b-linux.zip
+      NDK_ARCHIVE_DIR: android-ndk-r26b
       KEYSTORE_BASE64: ${{ secrets.SKYNETVPN_KEYSTORE_BASE64 }}
       GITHUB_TOKEN: ${{ github.token }}
 
@@ -89,8 +92,41 @@ jobs:
       - name: Install Android NDK
         shell: bash
         run: |
-          sdkmanager "ndk;26.1.10909125"
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> "$GITHUB_ENV"
+          set -euo pipefail
+
+          ndk_path="$ANDROID_HOME/ndk/$NDK_VERSION"
+          if [ ! -d "$ndk_path" ]; then
+            for attempt in 1 2 3; do
+              echo "Installing Android NDK $NDK_VERSION (attempt $attempt/3)"
+              rm -rf "$ANDROID_HOME/.temp" "$ndk_path"
+
+              if sdkmanager "ndk;$NDK_VERSION"; then
+                break
+              fi
+
+              if [ "$attempt" -eq 3 ]; then
+                echo "sdkmanager failed after $attempt attempts; falling back to direct NDK archive download"
+                break
+              fi
+
+              sleep $((attempt * 10))
+            done
+
+            if [ ! -d "$ndk_path" ]; then
+              ndk_zip="$RUNNER_TEMP/android-ndk.zip"
+              rm -f "$ndk_zip"
+              rm -rf "$RUNNER_TEMP/$NDK_ARCHIVE_DIR" "$ndk_path"
+              curl -fL --retry 5 --retry-all-errors --retry-delay 10 --connect-timeout 30 \
+                "$NDK_ARCHIVE_URL" -o "$ndk_zip"
+              unzip -tq "$ndk_zip"
+              unzip -q "$ndk_zip" -d "$RUNNER_TEMP"
+              mkdir -p "$ANDROID_HOME/ndk"
+              mv "$RUNNER_TEMP/$NDK_ARCHIVE_DIR" "$ndk_path"
+            fi
+          fi
+
+          test -d "$ndk_path"
+          echo "ANDROID_NDK_HOME=$ndk_path" >> "$GITHUB_ENV"
 
       - name: Set up Go
         uses: actions/setup-go@v5
