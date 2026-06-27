@@ -6,6 +6,7 @@ import com.skyvpn.app.domain.model.TransportType
 import com.skyvpn.app.domain.model.VPNConfig
 import com.skyvpn.app.domain.model.VPNProtocol
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.content
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive

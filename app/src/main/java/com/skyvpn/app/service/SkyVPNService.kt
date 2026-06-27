@@ -77,14 +77,12 @@ class SkyVPNService : VpnService() {
         XrayCoreManager.initialize(this)
         TUNManager.initialize(this)
         reconnectManager.bindService(this)
-        reconnectManager.startMonitoring()
         Timber.i("VPN Service created")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent == null) {
-            serviceScope.launch { autoConnectLastConfig() }
-            return START_STICKY
+            return START_NOT_STICKY
         }
 
         when (intent?.action) {
@@ -101,7 +99,7 @@ class SkyVPNService : VpnService() {
                 serviceScope.launch { reconnect() }
             }
             ACTION_AUTO_CONNECT -> {
-                serviceScope.launch { autoConnectLastConfig() }
+                Timber.i("Ignoring auto-connect request in manual-safe mode")
             }
         }
         return START_STICKY
@@ -253,6 +251,9 @@ class SkyVPNService : VpnService() {
         addLog(LogLevel.INFO, "Service", "Connected to ${config.name} (${config.address}:${config.port})")
 
         startForeground(SkyVPNApp.VPN_NOTIFICATION_ID, createNotification("Connected to ${config.name}"))
+        if (settingsRepository.getAutoReconnect()) {
+            reconnectManager.startMonitoring()
+        }
         reconnectManager.onConnectionEstablished()
         startStatsMonitoring()
         startCoreWatch()
@@ -390,6 +391,7 @@ class SkyVPNService : VpnService() {
     private fun cleanupVpnResources() {
         stopStatsMonitoring()
         stopCoreWatch()
+        reconnectManager.stopMonitoring()
         try {
             TUNManager.stop()
             XrayCoreManager.stop()

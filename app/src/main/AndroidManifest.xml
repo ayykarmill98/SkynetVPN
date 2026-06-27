@@ -67,7 +67,7 @@
 
         <receiver
             android:name=".service.BootReceiver"
-            android:enabled="true"
+            android:enabled="false"
             android:exported="true"
             android:directBootAware="true">
             <intent-filter>
@@ -78,7 +78,7 @@
 
         <receiver
             android:name=".service.NetworkChangeReceiver"
-            android:enabled="true"
+            android:enabled="false"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.net.conn.CONNECTIVITY_CHANGE" />

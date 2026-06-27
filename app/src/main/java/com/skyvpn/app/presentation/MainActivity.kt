@@ -1,11 +1,8 @@
 package com.skyvpn.app.presentation
 
-import android.content.ComponentName
 import android.content.Intent
-import android.content.ServiceConnection
 import android.os.Build
 import android.os.Bundle
-import android.os.IBinder
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -16,12 +13,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.lifecycle.lifecycleScope
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.skyvpn.app.domain.usecase.AutoConnectUseCase
 import com.skyvpn.app.presentation.about.AboutScreen
 import com.skyvpn.app.presentation.config.ConfigListScreen
 import com.skyvpn.app.presentation.config.ConfigListViewModel
@@ -37,16 +32,10 @@ import com.skyvpn.app.presentation.stats.StatsViewModel
 import com.skyvpn.app.presentation.theme.SkyVPNTheme
 import com.skyvpn.app.service.SkyVPNService
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
-    @Inject lateinit var autoConnectUseCase: AutoConnectUseCase
-
-    private var vpnService: SkyVPNService? = null
-    private var isBound = false
     private var pendingConnectConfigId: Long? = null
 
     private val vpnPermissionLauncher = registerForActivityResult(
@@ -62,31 +51,12 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { }
 
-    private val serviceConnection = object : ServiceConnection {
-        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-            val binder = service as SkyVPNService.LocalBinder
-            vpnService = binder.getService()
-            isBound = true
-        }
-
-        override fun onServiceDisconnected(name: ComponentName?) {
-            vpnService = null
-            isBound = false
-        }
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-        }
-
-        lifecycleScope.launch {
-            autoConnectUseCase()?.let { configId ->
-                handleConnect(configId)
-            }
         }
 
         setContent {
@@ -163,20 +133,6 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-        }
-    }
-
-    override fun onStart() {
-        super.onStart()
-        val intent = Intent(this, SkyVPNService::class.java)
-        bindService(intent, serviceConnection, BIND_AUTO_CREATE)
-    }
-
-    override fun onStop() {
-        super.onStop()
-        if (isBound) {
-            unbindService(serviceConnection)
-            isBound = false
         }
     }
 
