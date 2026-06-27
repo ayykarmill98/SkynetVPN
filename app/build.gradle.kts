@@ -5,6 +5,14 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+val targetAbi = System.getenv("TARGET_ABI")?.takeIf { it.isNotBlank() } ?: "arm64-v8a"
+val supportedApkAbis = setOf("arm64-v8a", "x86_64")
+val apkAbis = if (targetAbi == "universal") {
+    supportedApkAbis.toTypedArray()
+} else {
+    arrayOf(targetAbi)
+}
+
 android {
     namespace = "com.skyvpn.app"
     compileSdk = 34
@@ -13,8 +21,8 @@ android {
         applicationId = "com.skyvpn.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 9
-        versionName = "1.0.8"
+        versionCode = System.getenv("APP_VERSION_CODE")?.toIntOrNull() ?: 9
+        versionName = System.getenv("APP_VERSION_NAME") ?: System.getenv("APP_VERSION") ?: "1.0.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -27,8 +35,8 @@ android {
         abi {
             isEnable = true
             reset()
-            include("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
-            isUniversalApk = true
+            include(*apkAbis)
+            isUniversalApk = targetAbi == "universal"
         }
     }
 
