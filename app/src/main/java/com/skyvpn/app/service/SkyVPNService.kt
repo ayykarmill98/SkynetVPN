@@ -101,7 +101,7 @@ class SkyVPNService : VpnService() {
             }
             ACTION_DISCONNECT -> {
                 connectJob?.cancel()
-                serviceScope.launch { disconnect() }
+                serviceScope.launch { disconnect(stopSelfWhenDone = false) }
             }
             ACTION_RECONNECT -> {
                 serviceScope.launch { reconnect() }
@@ -115,7 +115,22 @@ class SkyVPNService : VpnService() {
 
     private fun startConnect(configId: Long) {
         connectJob?.cancel()
-        val newJob = serviceScope.launch { connect(configId) }
+        val newJob = serviceScope.launch {
+            try {
+                connect(configId)
+            } catch (e: CancellationException) {
+                addLogSafely(LogLevel.INFO, "Service", "Connect cancelled")
+                throw e
+            } catch (e: Throwable) {
+                Timber.e(e, "Unexpected connect failure")
+                publishState(_connectionState.value.copy(
+                    status = ConnectionStatus.ERROR,
+                    errorMessage = e.message ?: "Unexpected connect failure"
+                ))
+                addLogSafely(LogLevel.ERROR, "Service", "Unexpected connect failure: ${e.message}")
+                cleanupVpnResources()
+            }
+        }
         connectJob = newJob
         newJob.invokeOnCompletion {
             if (connectJob == newJob) {
@@ -143,7 +158,6 @@ class SkyVPNService : VpnService() {
             addLog(LogLevel.ERROR, "Service", "Config not found for id: $configId")
             releaseWakeLock()
             stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
             return
         }
 
@@ -156,7 +170,6 @@ class SkyVPNService : VpnService() {
             addLog(LogLevel.ERROR, "Service", configError)
             releaseWakeLock()
             stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
             return
         }
 
@@ -172,7 +185,6 @@ class SkyVPNService : VpnService() {
             addLog(LogLevel.ERROR, "Service", "IPv4 or IPv6 must be enabled")
             releaseWakeLock()
             stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
             return
         }
 
@@ -227,7 +239,6 @@ class SkyVPNService : VpnService() {
             addLog(LogLevel.ERROR, "Service", "Failed to establish: ${e.message}")
             releaseWakeLock()
             stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
             return
         }
 
@@ -240,7 +251,6 @@ class SkyVPNService : VpnService() {
             ))
             addLog(LogLevel.ERROR, "Xray", errorMessage)
             stopVpn()
-            stopSelf()
             return
         }
 
@@ -257,7 +267,6 @@ class SkyVPNService : VpnService() {
             ))
             addLog(LogLevel.ERROR, "TUN", errorMessage)
             stopVpn()
-            stopSelf()
             return
         }
 
@@ -278,7 +287,6 @@ class SkyVPNService : VpnService() {
             ))
             addLog(LogLevel.ERROR, "Health", errorMessage)
             stopVpn()
-            stopSelf()
             return
         }
 
@@ -300,7 +308,7 @@ class SkyVPNService : VpnService() {
         startCoreWatch()
     }
 
-    private suspend fun disconnect(stopSelfWhenDone: Boolean = true) {
+    private suspend fun disconnect(stopSelfWhenDone: Boolean = false) {
         disconnectMutex.withLock {
             val hadActiveResources = hasActiveVpnResources()
             if (hadActiveResources) {
