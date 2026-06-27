@@ -70,6 +70,7 @@ jobs:
       TARGET_ABI: ${{ matrix.abi }}
       GRADLE_VERSION: 8.5
       KEYSTORE_BASE64: ${{ secrets.SKYNETVPN_KEYSTORE_BASE64 }}
+      GITHUB_TOKEN: ${{ github.token }}
 
     steps:
       - name: Checkout source
@@ -154,29 +155,47 @@ jobs:
         shell: bash
         run: |
           set -e
+          api_header=(-H "Accept: application/vnd.github+json" -H "User-Agent: SkynetVPN-build")
+          if [ -n "$GITHUB_TOKEN" ]; then
+            api_header+=(-H "Authorization: Bearer $GITHUB_TOKEN")
+          fi
+
           download_xray() {
             local core_abi="$1"
             local asset_name="$2"
             local work_dir="xray-dist-$core_abi"
+            local zip_file="xray-$core_abi.zip"
 
             echo "Bundling VPN core for ABI: $core_abi from $asset_name"
             mkdir -p "app/src/main/assets/xray/$core_abi"
             mkdir -p "app/src/main/jniLibs/$core_abi"
 
             local xray_url
-            xray_url="$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest \
-              | grep browser_download_url \
-              | grep "$asset_name" \
-              | cut -d '"' -f 4 \
+            xray_url="$(curl -fsSL "${api_header[@]}" https://api.github.com/repos/XTLS/Xray-core/releases/latest \
+              | jq -r --arg name "$asset_name" '.assets[] | select(.name == $name) | .browser_download_url' \
               | head -n 1)"
             if [ -z "$xray_url" ]; then
               echo "Failed to find Xray release asset: $asset_name"
+              echo "Available Android assets:"
+              curl -fsSL "${api_header[@]}" https://api.github.com/repos/XTLS/Xray-core/releases/latest \
+                | jq -r '.assets[].name' \
+                | grep '^Xray-android' || true
               exit 1
             fi
 
-            curl -L "$xray_url" -o "xray-$core_abi.zip"
+            echo "Downloading $xray_url"
+            curl -fL --retry 3 --retry-delay 2 --connect-timeout 30 "$xray_url" -o "$zip_file"
+            if ! unzip -tq "$zip_file"; then
+              echo "Downloaded Xray asset is not a valid zip: $zip_file"
+              echo "File size:"
+              ls -lh "$zip_file"
+              echo "First bytes:"
+              head -c 200 "$zip_file" || true
+              exit 1
+            fi
+
             rm -rf "$work_dir"
-            unzip -q "xray-$core_abi.zip" -d "$work_dir"
+            unzip -q "$zip_file" -d "$work_dir"
             find "$work_dir" -type f -name xray -exec cp {} "app/src/main/jniLibs/$core_abi/libxray.so" \;
             find "$work_dir" -type f -name geoip.dat -exec cp {} "app/src/main/assets/xray/$core_abi/geoip.dat" \; || true
             find "$work_dir" -type f -name geosite.dat -exec cp {} "app/src/main/assets/xray/$core_abi/geosite.dat" \; || true
