@@ -21,7 +21,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
@@ -158,7 +157,7 @@ fun ConfigListScreen(
                                     ShareUtils.shareText(context, exported, "Export Config")
                                 }
                             },
-                            onToggleLock = { viewModel.toggleLocked(config) }
+                            onToggleLock = { viewModel.lockConfig(config) }
                         )
                     }
                 }
@@ -297,51 +296,38 @@ private fun ConfigCard(
                 }
             }
             Column(horizontalAlignment = Alignment.End) {
-                Row {
-                    IconButton(onClick = onPin, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            Icons.Default.PushPin,
-                            "Pin",
-                            tint = if (config.isPinned) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                        )
-                    }
-                    IconButton(onClick = onToggleLock, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            if (config.isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
-                            if (config.isLocked) "Unlock" else "Lock",
-                            tint = if (config.isLocked) MaterialTheme.colorScheme.error
-                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                        )
-                    }
+                if (config.isLocked) {
                     IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
                         Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
                     }
-                }
-                Row {
-                    IconButton(
-                        onClick = onEdit,
-                        enabled = !config.isLocked,
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Edit,
-                            "Edit",
-                            tint = if (config.isLocked) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)
-                            else MaterialTheme.colorScheme.primary
-                        )
+                } else {
+                    Row {
+                        IconButton(onClick = onPin, modifier = Modifier.size(36.dp)) {
+                            Icon(
+                                Icons.Default.PushPin,
+                                "Pin",
+                                tint = if (config.isPinned) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                            )
+                        }
+                        IconButton(onClick = onToggleLock, modifier = Modifier.size(36.dp)) {
+                            Icon(
+                                Icons.Default.LockOpen,
+                                "Lock",
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            )
+                        }
+                        IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
+                        }
                     }
-                    IconButton(
-                        onClick = onExport,
-                        enabled = !config.isLocked,
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Share,
-                            "Export",
-                            tint = if (config.isLocked) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)
-                            else MaterialTheme.colorScheme.primary
-                        )
+                    Row {
+                        IconButton(onClick = onEdit, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Default.Edit, "Edit", tint = MaterialTheme.colorScheme.primary)
+                        }
+                        IconButton(onClick = onExport, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Default.Share, "Export", tint = MaterialTheme.colorScheme.primary)
+                        }
                     }
                 }
             }

@@ -114,12 +114,13 @@ class ConfigListViewModel @Inject constructor(
         }
     }
 
-    fun toggleLocked(config: VPNConfig) {
-        updateConfig(config.copy(isLocked = !config.isLocked))
+    fun lockConfig(config: VPNConfig) {
+        updateConfig(config.copy(isLocked = true))
     }
 
     fun exportConfig(config: VPNConfig): String? {
         if (config.isLocked) return null
         return exportConfigUseCase(config).getOrNull()
     }
+
 }
