@@ -1,8 +1,10 @@
 package com.skyvpn.app.presentation.config
 
 import android.graphics.Bitmap
-import androidx.compose.foundation.Image
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
@@ -28,6 +31,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shield
@@ -57,6 +61,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -68,9 +73,11 @@ import androidx.compose.ui.unit.dp
 import com.skyvpn.app.domain.model.VPNConfig
 import com.skyvpn.app.util.ClipboardUtils
 import com.skyvpn.app.util.ConfigParser
+import com.skyvpn.app.util.QrCodeImportDecoder
 import com.skyvpn.app.util.ShareUtils
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,12 +95,65 @@ fun ConfigListScreen(
     var isSearchActive by remember { mutableStateOf(false) }
     var showImportDialog by remember { mutableStateOf(false) }
     var importText by remember { mutableStateOf("") }
+    var isQrImporting by remember { mutableStateOf(false) }
     var editingConfig by remember { mutableStateOf<VPNConfig?>(null) }
     var exportingConfig by remember { mutableStateOf<VPNConfig?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+    val qrImportScope = rememberCoroutineScope()
     val selectedConfig = allConfigs.firstOrNull { it.id == selectedConfigId }
     val selectedConfigError = selectedConfig?.let { ConfigParser.getValidationError(it) }
+
+    fun importDecodedQr(text: String) {
+        importText = ""
+        showImportDialog = false
+        viewModel.importFromText(text)
+    }
+
+    fun showQrImportError(error: Throwable) {
+        viewModel.showMessage("QR import failed: ${error.message ?: "unable to read QR"}")
+    }
+
+    val qrImageLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+
+        qrImportScope.launch {
+            isQrImporting = true
+            val result = try {
+                QrCodeImportDecoder.decodeFromUri(context, uri)
+            } finally {
+                isQrImporting = false
+            }
+
+            result
+                .onSuccess { text -> importDecodedQr(text) }
+                .onFailure { error -> showQrImportError(error) }
+        }
+    }
+
+    val qrCameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicturePreview()
+    ) { bitmap ->
+        if (bitmap == null) {
+            viewModel.showMessage("QR scan canceled")
+            return@rememberLauncherForActivityResult
+        }
+
+        qrImportScope.launch {
+            isQrImporting = true
+            val result = try {
+                QrCodeImportDecoder.decodeFromBitmap(bitmap)
+            } finally {
+                isQrImporting = false
+            }
+
+            result
+                .onSuccess { text -> importDecodedQr(text) }
+                .onFailure { error -> showQrImportError(error) }
+        }
+    }
 
     LaunchedEffect(importMessage) {
         val message = importMessage ?: return@LaunchedEffect
@@ -219,9 +279,41 @@ fun ConfigListScreen(
                     TextButton(
                         onClick = {
                             importText = ClipboardUtils.getText(context).orEmpty()
-                        }
+                        },
+                        enabled = !isLoading && !isQrImporting
                     ) {
                         Text("Paste Clipboard")
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        TextButton(
+                            onClick = { qrImageLauncher.launch("image/*") },
+                            modifier = Modifier.weight(1f),
+                            enabled = !isLoading && !isQrImporting
+                        ) {
+                            Icon(
+                                Icons.Default.QrCodeScanner,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(if (isQrImporting) "Reading..." else "QR Image", maxLines = 1)
+                        }
+                        TextButton(
+                            onClick = { qrCameraLauncher.launch(null) },
+                            modifier = Modifier.weight(1f),
+                            enabled = !isLoading && !isQrImporting
+                        ) {
+                            Icon(
+                                Icons.Default.CameraAlt,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Scan QR", maxLines = 1)
+                        }
                     }
                 }
             },
@@ -232,7 +324,7 @@ fun ConfigListScreen(
                         importText = ""
                         showImportDialog = false
                     },
-                    enabled = importText.isNotBlank() && !isLoading
+                    enabled = importText.isNotBlank() && !isLoading && !isQrImporting
                 ) {
                     Text(if (isLoading) "Importing..." else "Import")
                 }
