@@ -42,7 +42,7 @@ class SettingsRepositoryImpl @Inject constructor(
     override fun getSettings(): Flow<AppSettings> = dataStore.data.map { prefs ->
         AppSettings(
             autoConnect = prefs[Keys.AUTO_CONNECT] ?: false,
-            autoReconnect = prefs[Keys.AUTO_RECONNECT] ?: false,
+            autoReconnect = prefs[Keys.AUTO_RECONNECT] ?: true,
             retryDelay = prefs[Keys.RETRY_DELAY] ?: 1000L,
             maxRetryCount = prefs[Keys.MAX_RETRY_COUNT] ?: 10,
             dnsMode = prefs[Keys.DNS_MODE] ?: "remote",
@@ -93,7 +93,7 @@ class SettingsRepositoryImpl @Inject constructor(
     }
 
     override suspend fun getAutoReconnect(): Boolean =
-        dataStore.data.first()[Keys.AUTO_RECONNECT] ?: false
+        dataStore.data.first()[Keys.AUTO_RECONNECT] ?: true
 
     override suspend fun setAutoReconnect(enabled: Boolean) {
         dataStore.edit { it[Keys.AUTO_RECONNECT] = enabled }

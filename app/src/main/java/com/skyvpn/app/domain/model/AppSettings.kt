@@ -2,7 +2,7 @@ package com.skyvpn.app.domain.model
 
 data class AppSettings(
     val autoConnect: Boolean = false,
-    val autoReconnect: Boolean = false,
+    val autoReconnect: Boolean = true,
     val retryDelay: Long = 1000,
     val maxRetryCount: Int = 10,
     val dnsMode: String = "remote",
