@@ -6,7 +6,6 @@ import com.skyvpn.app.domain.model.TransportType
 import com.skyvpn.app.domain.model.VPNConfig
 import com.skyvpn.app.domain.model.VPNProtocol
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.content
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -262,7 +261,7 @@ object ConfigParser {
     }
 
     private fun kotlinx.serialization.json.JsonObject.jsonString(key: String, default: String = ""): String =
-        get(key)?.jsonPrimitive?.content ?: default
+        get(key)?.jsonPrimitive?.toString()?.removeSurrounding("\"") ?: default
 
     private fun kotlinx.serialization.json.JsonObject.jsonInt(key: String): Int? =
         get(key)?.jsonPrimitive?.intOrNull
