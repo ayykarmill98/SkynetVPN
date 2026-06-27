@@ -7,6 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -151,13 +152,25 @@ class MainActivity : ComponentActivity() {
             action = SkyVPNService.ACTION_CONNECT
             putExtra(SkyVPNService.EXTRA_CONFIG_ID, configId)
         }
-        startService(intent)
+        startVpnServiceSafely(intent, foreground = true)
     }
 
     private fun handleDisconnect() {
         val intent = Intent(this, SkyVPNService::class.java).apply {
             action = SkyVPNService.ACTION_DISCONNECT
         }
-        startService(intent)
+        startVpnServiceSafely(intent, foreground = false)
+    }
+
+    private fun startVpnServiceSafely(intent: Intent, foreground: Boolean) {
+        runCatching {
+            if (foreground && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                ContextCompat.startForegroundService(this, intent)
+            } else {
+                startService(intent)
+            }
+        }.onFailure {
+            android.util.Log.e("SkynetVPN/MainActivity", "Failed to start VPN service", it)
+        }
     }
 }

@@ -92,23 +92,27 @@ class SkyVPNService : VpnService() {
             return START_NOT_STICKY
         }
 
-        when (intent?.action) {
-            ACTION_CONNECT -> {
-                val configId = intent.getLongExtra(EXTRA_CONFIG_ID, -1)
-                if (configId > 0) {
-                    startConnect(configId)
+        runCatching {
+            when (intent.action) {
+                ACTION_CONNECT -> {
+                    val configId = intent.getLongExtra(EXTRA_CONFIG_ID, -1)
+                    if (configId > 0) {
+                        startConnect(configId)
+                    }
+                }
+                ACTION_DISCONNECT -> {
+                    connectJob?.cancel()
+                    serviceScope.launch { disconnect(stopSelfWhenDone = false) }
+                }
+                ACTION_RECONNECT -> {
+                    serviceScope.launch { reconnect() }
+                }
+                ACTION_AUTO_CONNECT -> {
+                    Timber.i("Ignoring auto-connect request in manual-safe mode")
                 }
             }
-            ACTION_DISCONNECT -> {
-                connectJob?.cancel()
-                serviceScope.launch { disconnect(stopSelfWhenDone = false) }
-            }
-            ACTION_RECONNECT -> {
-                serviceScope.launch { reconnect() }
-            }
-            ACTION_AUTO_CONNECT -> {
-                Timber.i("Ignoring auto-connect request in manual-safe mode")
-            }
+        }.onFailure {
+            Timber.e(it, "Failed to handle service action: ${intent.action}")
         }
         return START_STICKY
     }
@@ -120,7 +124,6 @@ class SkyVPNService : VpnService() {
                 connect(configId)
             } catch (e: CancellationException) {
                 addLogSafely(LogLevel.INFO, "Service", "Connect cancelled")
-                throw e
             } catch (e: Throwable) {
                 Timber.e(e, "Unexpected connect failure")
                 publishState(_connectionState.value.copy(
@@ -324,7 +327,7 @@ class SkyVPNService : VpnService() {
             }
 
             if (stopSelfWhenDone && !isDestroyed) {
-                stopSelf()
+                Timber.i("Disconnect requested service stop, keeping app process alive")
             }
         }
     }
@@ -449,7 +452,9 @@ class SkyVPNService : VpnService() {
                 ConnectionHealth(false, -1, "$url returned HTTP $code")
             }
         } catch (e: Exception) {
-            if (e is CancellationException) throw e
+            if (e is CancellationException) {
+                return@withContext ConnectionHealth(false, -1, "Connection check cancelled")
+            }
             Timber.d(e, "Health check failed for $url")
             ConnectionHealth(false, -1, e.message ?: "Failed to reach $url")
         }
@@ -560,7 +565,6 @@ class SkyVPNService : VpnService() {
             connect(configId)
         } else {
             stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
         }
     }
 
