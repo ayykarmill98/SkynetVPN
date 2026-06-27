@@ -13,8 +13,8 @@ android {
         applicationId = "com.skyvpn.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.0.3"
+        versionCode = 5
+        versionName = "1.0.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -95,6 +95,11 @@ dependencies {
     val composeVersion = "1.6.1"
     val hiltVersion = "2.50"
     val roomVersion = "2.6.1"
+    val tun2socksAar = file("libs/tun2socks.aar")
+
+    if (tun2socksAar.exists()) {
+        implementation(files(tun2socksAar))
+    }
 
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
