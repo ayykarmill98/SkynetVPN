@@ -469,13 +469,8 @@ private fun ConfigCard(
             }
             Column(horizontalAlignment = Alignment.End) {
                 if (config.isLocked) {
-                    Row {
-                        IconButton(onClick = onExport, modifier = Modifier.size(36.dp)) {
-                            Icon(Icons.Default.Share, "Export", tint = MaterialTheme.colorScheme.primary)
-                        }
-                        IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
-                            Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
-                        }
+                    IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
                     }
                 } else {
                     Row {

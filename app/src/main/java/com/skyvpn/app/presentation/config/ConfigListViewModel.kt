@@ -192,7 +192,7 @@ class ConfigListViewModel @Inject constructor(
     }
 
     fun exportConfig(config: VPNConfig, protect: Boolean): String? {
-        if (config.isLocked && !protect) return null
+        if (config.isLocked) return null
         return exportConfigUseCase(config, protect).getOrNull()
     }
 
