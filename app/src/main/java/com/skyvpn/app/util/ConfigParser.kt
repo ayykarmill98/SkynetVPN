@@ -36,6 +36,7 @@ object ConfigParser {
         val trimmed = raw.trim()
         return try {
             val config = when {
+                ConfigExporter.isProtectedExport(trimmed) -> parseProtected(trimmed)
                 trimmed.startsWith("vmess://") -> parseVMess(trimmed)
                 trimmed.startsWith("vless://") -> parseVLESS(trimmed)
                 trimmed.startsWith("trojan://") -> parseTrojan(trimmed)
@@ -238,6 +239,15 @@ object ConfigParser {
         return null
     }
 
+    private fun parseProtected(raw: String): VPNConfig? {
+        val standard = ConfigExporter.decodeProtected(raw) ?: return null
+        return parseConfig(standard)?.copy(
+            isLocked = true,
+            lockPassword = "protected",
+            rawConfig = raw
+        )
+    }
+
     private fun parseTransport(net: String): TransportType {
         return when (net.lowercase()) {
             "ws", "websocket" -> TransportType.WEBSOCKET
@@ -289,9 +299,10 @@ object ConfigParser {
                     val trimmed = line.trim()
                     trimmed.startsWith("vmess://") ||
                         trimmed.startsWith("vless://") ||
-                        trimmed.startsWith("trojan://") ||
-                        trimmed.startsWith("ss://") ||
-                        trimmed.startsWith("shadowsocks://")
+                    trimmed.startsWith("trojan://") ||
+                    trimmed.startsWith("ss://") ||
+                        trimmed.startsWith("shadowsocks://") ||
+                        ConfigExporter.isProtectedExport(trimmed)
                 }
             }
     }

@@ -6,14 +6,12 @@ import javax.inject.Inject
 
 class ExportConfigUseCase @Inject constructor() {
 
-    operator fun invoke(config: VPNConfig): Result<String> {
+    operator fun invoke(config: VPNConfig, protect: Boolean = false): Result<String> {
         return try {
-            val exported = when (config.protocol) {
-                com.skyvpn.app.domain.model.VPNProtocol.VMESS -> ConfigExporter.exportToVMess(config)
-                com.skyvpn.app.domain.model.VPNProtocol.VLESS -> ConfigExporter.exportToVLESS(config)
-                com.skyvpn.app.domain.model.VPNProtocol.TROJAN -> ConfigExporter.exportToTrojan(config)
-                com.skyvpn.app.domain.model.VPNProtocol.SHADOWSOCKS -> ConfigExporter.exportToSS(config)
-                else -> config.rawConfig
+            val exported = if (protect) {
+                ConfigExporter.exportProtected(config)
+            } else {
+                ConfigExporter.exportStandard(config)
             }
             Result.success(exported)
         } catch (e: Exception) {

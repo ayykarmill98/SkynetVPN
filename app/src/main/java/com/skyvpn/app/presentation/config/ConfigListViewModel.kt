@@ -191,9 +191,13 @@ class ConfigListViewModel @Inject constructor(
         updateConfig(config.copy(isLocked = true))
     }
 
-    fun exportConfig(config: VPNConfig): String? {
-        if (config.isLocked) return null
-        return exportConfigUseCase(config).getOrNull()
+    fun exportConfig(config: VPNConfig, protect: Boolean): String? {
+        if (config.isLocked && !protect) return null
+        return exportConfigUseCase(config, protect).getOrNull()
+    }
+
+    fun showMessage(message: String) {
+        _importMessage.value = message
     }
 
     fun clearImportMessage() {

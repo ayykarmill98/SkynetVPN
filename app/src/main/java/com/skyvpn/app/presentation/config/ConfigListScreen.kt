@@ -1,5 +1,7 @@
 package com.skyvpn.app.presentation.config
 
+import android.graphics.Bitmap
+import androidx.compose.foundation.Image
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -20,8 +22,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
@@ -36,6 +40,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SearchBar
@@ -55,13 +60,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.skyvpn.app.domain.model.VPNConfig
 import com.skyvpn.app.util.ClipboardUtils
 import com.skyvpn.app.util.ConfigParser
 import com.skyvpn.app.util.ShareUtils
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -80,6 +89,7 @@ fun ConfigListScreen(
     var showImportDialog by remember { mutableStateOf(false) }
     var importText by remember { mutableStateOf("") }
     var editingConfig by remember { mutableStateOf<VPNConfig?>(null) }
+    var exportingConfig by remember { mutableStateOf<VPNConfig?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     val selectedConfig = allConfigs.firstOrNull { it.id == selectedConfigId }
@@ -181,9 +191,7 @@ fun ConfigListScreen(
                             onPin = { viewModel.togglePin(config.id, !config.isPinned) },
                             onEdit = { editingConfig = config },
                             onExport = {
-                                viewModel.exportConfig(config)?.let { exported ->
-                                    ShareUtils.shareText(context, exported, "Export Config")
-                                }
+                                exportingConfig = config
                             },
                             onToggleLock = { viewModel.lockConfig(config) }
                         )
@@ -245,6 +253,14 @@ fun ConfigListScreen(
                 viewModel.updateConfig(updated)
                 editingConfig = null
             }
+        )
+    }
+
+    exportingConfig?.let { config ->
+        ExportConfigDialog(
+            config = config,
+            viewModel = viewModel,
+            onDismiss = { exportingConfig = null }
         )
     }
 }
@@ -361,8 +377,13 @@ private fun ConfigCard(
             }
             Column(horizontalAlignment = Alignment.End) {
                 if (config.isLocked) {
-                    IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
-                        Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
+                    Row {
+                        IconButton(onClick = onExport, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Default.Share, "Export", tint = MaterialTheme.colorScheme.primary)
+                        }
+                        IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
+                        }
                     }
                 } else {
                     Row {
@@ -444,6 +465,171 @@ private fun ActiveConfigBanner(
             }
         }
     }
+}
+
+@Composable
+private fun ExportConfigDialog(
+    config: VPNConfig,
+    viewModel: ConfigListViewModel,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var protectedMode by remember(config.id) { mutableStateOf(true) }
+    val exported = remember(config, protectedMode) {
+        viewModel.exportConfig(config, protectedMode)
+    }
+    val qrBitmap = remember(exported) {
+        exported?.let { createQrBitmap(it) }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Export Config") },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                qrBitmap?.let { bitmap ->
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "Config QR",
+                        modifier = Modifier.size(220.dp)
+                    )
+                }
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Link,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = exported ?: "Export unavailable",
+                            modifier = Modifier.weight(1f),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        IconButton(
+                            onClick = {
+                                exported?.let {
+                                    ClipboardUtils.setText(context, "SkynetVPN Config", it)
+                                    viewModel.showMessage("Copied export link")
+                                }
+                            },
+                            enabled = exported != null
+                        ) {
+                            Icon(Icons.Default.ContentCopy, "Copy")
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    ExportModeButton(
+                        text = "Protect",
+                        selected = protectedMode,
+                        onClick = { protectedMode = true }
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    ExportModeButton(
+                        text = "Standard",
+                        selected = !protectedMode,
+                        enabled = !config.isLocked,
+                        onClick = { protectedMode = false }
+                    )
+                }
+
+                if (config.isLocked && !protectedMode) {
+                    Text(
+                        text = "Standard export is disabled for locked configs",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    exported?.let {
+                        ShareUtils.shareText(context, it, "Export Config")
+                    }
+                },
+                enabled = exported != null
+            ) {
+                Text("Share")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
+}
+
+@Composable
+private fun ExportModeButton(
+    text: String,
+    selected: Boolean,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    if (selected) {
+        Button(
+            onClick = onClick,
+            enabled = enabled,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary
+            )
+        ) {
+            Text(text)
+        }
+    } else {
+        TextButton(
+            onClick = onClick,
+            enabled = enabled
+        ) {
+            Text(text)
+        }
+    }
+}
+
+private fun createQrBitmap(text: String): Bitmap? {
+    return runCatching {
+        val size = 512
+        val matrix = QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, size, size)
+        Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888).apply {
+            for (x in 0 until size) {
+                for (y in 0 until size) {
+                    setPixel(
+                        x,
+                        y,
+                        if (matrix[x, y]) android.graphics.Color.BLACK else android.graphics.Color.WHITE
+                    )
+                }
+            }
+        }
+    }.getOrNull()
 }
 
 @Composable
