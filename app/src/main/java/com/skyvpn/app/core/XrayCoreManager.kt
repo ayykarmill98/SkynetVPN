@@ -46,32 +46,14 @@ object XrayCoreManager {
 
         val dns = """
             "dns": {
-                "servers": [
-                    {
-                        "address": "${config.dnsRemote}",
-                        "port": 53,
-                        "domains": ["geosite:cn", "geosite:private"]
-                    },
-                    "${config.dnsRemote}"
-                ]
+                "servers": ["${jsonEscape(config.dnsRemote.ifEmpty { "8.8.8.8" })}", "1.1.1.1"]
             }
         """.trimIndent()
 
         val routing = """
             "routing": {
                 "domainStrategy": "IPIfNonMatch",
-                "rules": [
-                    {
-                        "type": "field",
-                        "outboundTag": "direct",
-                        "domain": ["geosite:private"]
-                    },
-                    {
-                        "type": "field",
-                        "outboundTag": "direct",
-                        "ip": ["geoip:private"]
-                    }
-                ]
+                "rules": []
             }
         """.trimIndent()
 
@@ -134,9 +116,9 @@ object XrayCoreManager {
                     "port": ${config.port},
                     "users": [
                         {
-                            "id": "${config.uuid}",
+                            "id": "${jsonEscape(config.uuid)}",
                             "alterId": ${config.alterId},
-                            "encryption": "${config.encryption.ifEmpty { "auto" }}",
+                            "encryption": "${jsonEscape(config.encryption.ifEmpty { "auto" })}",
                             "security": "auto"
                         }
                     ]
@@ -161,9 +143,9 @@ object XrayCoreManager {
                     "port": ${config.port},
                     "users": [
                         {
-                            "id": "${config.uuid}",
+                            "id": "${jsonEscape(config.uuid)}",
                             "encryption": "none",
-                            ${if (config.flow.isNotEmpty()) "\"flow\": \"${config.flow}\"," else ""}
+                            ${if (config.flow.isNotEmpty()) "\"flow\": \"${jsonEscape(config.flow)}\"," else ""}
                             "level": 8
                         }
                     ]
@@ -186,7 +168,7 @@ object XrayCoreManager {
                 {
                     "address": "${config.address}",
                     "port": ${config.port},
-                    "password": "${config.password}",
+                    "password": "${jsonEscape(config.password)}",
                     "level": 8
                 }
             ]
@@ -207,8 +189,8 @@ object XrayCoreManager {
                 {
                     "address": "${config.address}",
                     "port": ${config.port},
-                    "method": "${config.method.ifEmpty { "aes-256-gcm" }}",
-                    "password": "${config.password}",
+                    "method": "${jsonEscape(config.method.ifEmpty { "aes-256-gcm" })}",
+                    "password": "${jsonEscape(config.password)}",
                     "level": 8
                 }
             ]
@@ -236,8 +218,8 @@ object XrayCoreManager {
                             "port": ${config.port},
                             "users": [
                                 {
-                                    "user": "${config.username}",
-                                    "pass": "${config.password}"
+                                    "user": "${jsonEscape(config.username)}",
+                                    "pass": "${jsonEscape(config.password)}"
                                 }
                             ]
                         }
@@ -258,8 +240,8 @@ object XrayCoreManager {
                             "port": ${config.port},
                             "users": [
                                 {
-                                    "user": "${config.username}",
-                                    "pass": "${config.password}"
+                                    "user": "${jsonEscape(config.username)}",
+                                    "pass": "${jsonEscape(config.password)}"
                                 }
                             ]
                         }
@@ -284,48 +266,77 @@ object XrayCoreManager {
             com.skyvpn.app.domain.model.SecurityType.REALITY -> "reality"
         }
 
-        val wsSettings = if (config.transportType == com.skyvpn.app.domain.model.TransportType.WEBSOCKET) {
-            """,
+        val parts = mutableListOf(
+            "\"network\": \"$network\"",
+            "\"security\": \"$security\""
+        )
+
+        when (config.transportType) {
+            com.skyvpn.app.domain.model.TransportType.WEBSOCKET -> {
+                val wsPath = normalizePath(config.path)
+                val wsHost = config.host.ifBlank { config.sni }.ifBlank { config.address }
+                parts += """
                     "wsSettings": {
-                        "path": "${config.path}",
-                        "headers": { "Host": "${config.host}" }
-                    }"""
-        } else ""
-
-        val grpcSettings = if (config.transportType == com.skyvpn.app.domain.model.TransportType.GRPC) {
-            """,
+                        "path": "${jsonEscape(wsPath)}",
+                        "headers": { "Host": "${jsonEscape(wsHost)}" }
+                    }
+                """.trimIndent()
+            }
+            com.skyvpn.app.domain.model.TransportType.GRPC -> {
+                parts += """
                     "grpcSettings": {
-                        "serviceName": "${config.path}",
-                        "authority": "${config.host}"
-                    }"""
-        } else ""
+                        "serviceName": "${jsonEscape(config.path)}"${if (config.host.isNotBlank()) ",\n                        \"authority\": \"${jsonEscape(config.host)}\"" else ""}
+                    }
+                """.trimIndent()
+            }
+            com.skyvpn.app.domain.model.TransportType.HTTP_UPGRADE -> {
+                val host = config.host.ifBlank { config.sni }.ifBlank { config.address }
+                parts += """
+                    "httpupgradeSettings": {
+                        "path": "${jsonEscape(normalizePath(config.path))}",
+                        "host": "${jsonEscape(host)}"
+                    }
+                """.trimIndent()
+            }
+            com.skyvpn.app.domain.model.TransportType.HTTP2 -> {
+                val host = config.host.ifBlank { config.sni }.ifBlank { config.address }
+                parts += """
+                    "httpSettings": {
+                        "path": "${jsonEscape(normalizePath(config.path))}",
+                        "host": ["${jsonEscape(host)}"]
+                    }
+                """.trimIndent()
+            }
+            com.skyvpn.app.domain.model.TransportType.TCP -> Unit
+        }
 
-        val securitySettings = if (config.security == com.skyvpn.app.domain.model.SecurityType.TLS) {
-            """,
-                "tlsSettings": {
-                    "serverName": "${config.sni.ifEmpty { config.address }}",
-                    "allowInsecure": false,
-                    "fingerprint": "${config.fingerprint.ifEmpty { "chrome" }}"
-                }
-            """.trimIndent()
-        } else if (config.security == com.skyvpn.app.domain.model.SecurityType.REALITY) {
-            """,
-                "realitySettings": {
-                    "serverName": "${config.sni}",
-                    "publicKey": "${config.publicKey}",
-                    "shortId": "${config.shortId}",
-                    "fingerprint": "${config.fingerprint.ifEmpty { "chrome" }}",
-                    "spiderX": "${config.spiderX}"
-                }
-            """.trimIndent()
-        } else {
-            ""
+        when (config.security) {
+            com.skyvpn.app.domain.model.SecurityType.TLS -> {
+                parts += """
+                    "tlsSettings": {
+                        "serverName": "${jsonEscape(config.sni.ifBlank { config.host }.ifBlank { config.address })}",
+                        "allowInsecure": false,
+                        "fingerprint": "${jsonEscape(config.fingerprint.ifEmpty { "chrome" })}"
+                    }
+                """.trimIndent()
+            }
+            com.skyvpn.app.domain.model.SecurityType.REALITY -> {
+                parts += """
+                    "realitySettings": {
+                        "serverName": "${jsonEscape(config.sni.ifBlank { config.serverName }.ifBlank { config.address })}",
+                        "publicKey": "${jsonEscape(config.publicKey)}",
+                        "shortId": "${jsonEscape(config.shortId)}",
+                        "fingerprint": "${jsonEscape(config.fingerprint.ifEmpty { "chrome" })}",
+                        "spiderX": "${jsonEscape(config.spiderX.ifEmpty { "/" })}"
+                    }
+                """.trimIndent()
+            }
+            com.skyvpn.app.domain.model.SecurityType.NONE -> Unit
         }
 
         return """
             "streamSettings": {
-                "network": "$network",
-                "security": "$security"$wsSettings$grpcSettings$securitySettings
+                ${parts.joinToString(",\n                ")}
             }
         """.trimIndent()
     }
@@ -360,7 +371,12 @@ object XrayCoreManager {
 
             kotlinx.coroutines.delay(500)
             if (!isProcessAlive()) {
-                lastError = "Xray process exited immediately for ${config.address}:${config.port}"
+                val output = readProcessOutput(coreProcess)
+                lastError = if (output.isNotBlank()) {
+                    "Xray exited: ${output.takeLast(240)}"
+                } else {
+                    "Xray process exited immediately for ${config.address}:${config.port}"
+                }
                 Timber.e(lastError)
                 _isRunning.value = false
                 return false
@@ -401,6 +417,32 @@ object XrayCoreManager {
     private fun findNativeExecutable(context: Context, libraryName: String): File? {
         val nativeDir = context.applicationInfo.nativeLibraryDir ?: return null
         return File(nativeDir, libraryName).takeIf { it.exists() }
+    }
+
+    private fun normalizePath(path: String): String {
+        val cleanPath = path.ifBlank { "/" }
+        return if (cleanPath.startsWith("/")) cleanPath else "/$cleanPath"
+    }
+
+    private fun jsonEscape(value: String): String =
+        value
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("\t", "\\t")
+
+    private fun readProcessOutput(process: Process?): String {
+        if (process == null) return ""
+        return runCatching {
+            process.inputStream.bufferedReader().use { reader ->
+                reader.readText()
+                    .lineSequence()
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+                    .joinToString(" ")
+            }
+        }.getOrDefault("")
     }
 
     private fun copyAssetIfExists(context: Context, assetName: String, fileName: String) {
