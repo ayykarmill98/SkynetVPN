@@ -323,7 +323,7 @@ class SkyVPNService : VpnService() {
                 errorMessage = errorMessage
             ))
             addLog(LogLevel.ERROR, "Health", errorMessage)
-            stopVpn()
+            cleanupVpnResources()
             return
         }
 

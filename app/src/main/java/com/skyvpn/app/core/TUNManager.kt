@@ -51,13 +51,9 @@ object TUNManager {
     }
 
     fun stop() {
-        if (isActive) {
-            runCatching {
-                invokeEngine("stop")
-            }.onFailure {
-                Timber.w(it, "Failed to stop tun2socks engine cleanly")
-            }
-        }
+        // Some gomobile tun2socks builds can terminate the whole app process when Engine.stop()
+        // is called during a failed/half-open connection. Closing the duplicated TUN fd is enough
+        // to break the engine loop without risking a native crash.
         runCatching {
             tunFd?.close()
         }.onFailure {
