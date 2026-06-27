@@ -97,8 +97,12 @@ jobs:
       - name: Build APK
         shell: bash
         run: |
+          set -e
           TASK="assemble$(tr '[:lower:]' '[:upper:]' <<< ${BUILD_TYPE:0:1})${BUILD_TYPE:1}"
+          echo "Running Gradle task: $TASK"
           "$GRADLE_CMD" "$TASK" --no-daemon
+          echo "Generated APK files:"
+          find app/build/outputs/apk -type f -name "*.apk" -print || true
 
       - name: Collect ABI APK
         shell: bash
