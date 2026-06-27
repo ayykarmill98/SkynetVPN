@@ -1,0 +1,129 @@
+name: Build APK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: "Build type"
+        required: true
+        default: "debug"
+        type: choice
+        options:
+          - debug
+          - release
+      abi:
+        description: "APK ABI"
+        required: true
+        default: "arm64-v8a"
+        type: choice
+        options:
+          - arm64-v8a
+          - armeabi-v7a
+          - x86
+          - x86_64
+
+jobs:
+  build:
+    name: Build ${{ inputs.abi || 'arm64-v8a' }} ${{ inputs.build_type || 'debug' }} APK
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    env:
+      APP_NAME: SkynetVPN
+      APP_VERSION: 1.0.0
+      BUILD_TYPE: ${{ inputs.build_type || (startsWith(github.ref, 'refs/tags/') && 'release' || 'debug') }}
+      TARGET_ABI: ${{ inputs.abi || 'arm64-v8a' }}
+      GRADLE_VERSION: 8.5
+      KEYSTORE_BASE64: ${{ secrets.SKYNETVPN_KEYSTORE_BASE64 }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Prepare Gradle command
+        shell: bash
+        run: |
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            echo "GRADLE_CMD=./gradlew" >> "$GITHUB_ENV"
+          else
+            curl -L "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" -o gradle.zip
+            unzip -q gradle.zip -d "$RUNNER_TEMP/gradle"
+            echo "GRADLE_CMD=$RUNNER_TEMP/gradle/gradle-${GRADLE_VERSION}/bin/gradle" >> "$GITHUB_ENV"
+          fi
+
+      - name: Decode release keystore
+        if: env.BUILD_TYPE == 'release' && env.KEYSTORE_BASE64 != ''
+        shell: bash
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/skynetvpn-release.jks"
+          echo "SKYNETVPN_KEYSTORE_PATH=$RUNNER_TEMP/skynetvpn-release.jks" >> "$GITHUB_ENV"
+          echo "SKYNETVPN_KEYSTORE_PASSWORD=${{ secrets.SKYNETVPN_KEYSTORE_PASSWORD }}" >> "$GITHUB_ENV"
+          echo "SKYNETVPN_KEY_ALIAS=${{ secrets.SKYNETVPN_KEY_ALIAS }}" >> "$GITHUB_ENV"
+          echo "SKYNETVPN_KEY_PASSWORD=${{ secrets.SKYNETVPN_KEY_PASSWORD }}" >> "$GITHUB_ENV"
+
+      - name: Keep selected ABI native assets
+        shell: bash
+        run: |
+          for family in xray tun2socks; do
+            base="app/src/main/assets/$family"
+            if [ -d "$base" ]; then
+              find "$base" -mindepth 1 -maxdepth 1 -type d ! -name "$TARGET_ABI" -exec rm -rf {} +
+            fi
+          done
+
+      - name: Build APK
+        shell: bash
+        run: |
+          TASK="assemble$(tr '[:lower:]' '[:upper:]' <<< ${BUILD_TYPE:0:1})${BUILD_TYPE:1}"
+          "$GRADLE_CMD" "$TASK" --no-daemon
+
+      - name: Collect ABI APK
+        shell: bash
+        run: |
+          mkdir -p dist
+          APK_PATH="$(find app/build/outputs/apk -type f -name "*.apk" | grep "$BUILD_TYPE" | grep "$TARGET_ABI" | head -n 1)"
+          if [ -z "$APK_PATH" ]; then
+            echo "No APK found for ABI: $TARGET_ABI"
+            echo "Available APK files:"
+            find app/build/outputs/apk -type f -name "*.apk" -print
+            exit 1
+          fi
+
+          if [ "$BUILD_TYPE" = "release" ]; then
+            OUT_NAME="${APP_NAME}-${APP_VERSION}-${TARGET_ABI}.apk"
+          else
+            OUT_NAME="${APP_NAME}-${APP_VERSION}-${TARGET_ABI}-${BUILD_TYPE}.apk"
+          fi
+          cp "$APK_PATH" "dist/$OUT_NAME"
+          echo "APK_OUT=dist/$OUT_NAME" >> "$GITHUB_ENV"
+
+      - name: Upload ABI APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-${{ env.APP_VERSION }}-${{ env.TARGET_ABI }}-${{ env.BUILD_TYPE }}
+          path: ${{ env.APK_OUT }}
+          if-no-files-found: error
+
+      - name: Upload APK to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.APK_OUT }}

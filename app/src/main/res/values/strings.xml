@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SkynetVPN</string>
+    <string name="toggle_vpn">SkynetVPN</string>
+    <string name="connect">Connect</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="connected">Connected</string>
+    <string name="disconnected">Disconnected</string>
+    <string name="connecting">Connecting...</string>
+    <string name="reconnecting">Reconnecting...</string>
+    <string name="error">Error</string>
+    <string name="configs">Configs</string>
+    <string name="settings">Settings</string>
+    <string name="logs">Logs</string>
+    <string name="stats">Statistics</string>
+    <string name="about">About</string>
+    <string name="import_config">Import Config</string>
+    <string name="export_config">Export Config</string>
+    <string name="import_from_file">Import from File</string>
+    <string name="import_from_url">Import from URL</string>
+    <string name="import_from_clipboard">Import from Clipboard</string>
+    <string name="import_from_qr">Import from QR Code</string>
+    <string name="auto_connect">Auto Connect</string>
+    <string name="auto_reconnect">Auto Reconnect</string>
+    <string name="kill_switch">Kill Switch</string>
+    <string name="ping">Ping</string>
+    <string name="upload">Upload</string>
+    <string name="download">Download</string>
+    <string name="uptime">Uptime</string>
+</resources>
