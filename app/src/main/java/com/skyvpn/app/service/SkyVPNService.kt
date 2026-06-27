@@ -28,11 +28,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -57,6 +60,8 @@ class SkyVPNService : VpnService() {
     private var statsBaseTx: Long = 0
     private var lastRx: Long = 0
     private var lastTx: Long = 0
+    private var isDestroyed = false
+    private val disconnectMutex = Mutex()
 
     private val _connectionState = MutableStateFlow(ConnectionState())
     val connectionState: StateFlow<ConnectionState> = _connectionState
@@ -241,32 +246,29 @@ class SkyVPNService : VpnService() {
     }
 
     private suspend fun disconnect(stopSelfWhenDone: Boolean = true) {
-        publishState(_connectionState.value.copy(status = ConnectionStatus.DISCONNECTING))
-        addLog(LogLevel.INFO, "Service", "Disconnecting...")
+        disconnectMutex.withLock {
+            val hadActiveResources = hasActiveVpnResources()
+            if (hadActiveResources) {
+                publishState(_connectionState.value.copy(status = ConnectionStatus.DISCONNECTING))
+                addLogSafely(LogLevel.INFO, "Service", "Disconnecting...")
+            }
 
-        stopStatsMonitoring()
-        stopCoreWatch()
-        TUNManager.stop()
-        XrayCoreManager.stop()
-        vpnInterface?.close()
-        vpnInterface = null
+            cleanupVpnResources()
 
-        publishState(ConnectionState())
-        addLog(LogLevel.INFO, "Service", "Disconnected")
+            publishState(ConnectionState())
+            if (hadActiveResources) {
+                addLogSafely(LogLevel.INFO, "Service", "Disconnected")
+            }
 
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        releaseWakeLock()
-        if (stopSelfWhenDone) {
-            stopSelf()
+            if (stopSelfWhenDone && !isDestroyed) {
+                stopSelf()
+            }
         }
     }
 
     private suspend fun reconnect() {
         if (currentConfigId > 0) {
-            XrayCoreManager.stop()
-            TUNManager.stop()
-            vpnInterface?.close()
-            vpnInterface = null
+            cleanupVpnResources()
 
             val reconnectState = _connectionState.value.copy(
                 status = ConnectionStatus.RECONNECTING,
@@ -340,6 +342,14 @@ class SkyVPNService : VpnService() {
         }, "SkynetVPN/$tag", message)
     }
 
+    private suspend fun addLogSafely(level: LogLevel, tag: String, message: String) {
+        runCatching {
+            addLog(level, tag, message)
+        }.onFailure {
+            Timber.w(it, "Failed to write VPN log")
+        }
+    }
+
     private fun publishState(state: ConnectionState) {
         _connectionState.value = state
         connectionStateRepository.update(state)
@@ -351,23 +361,48 @@ class SkyVPNService : VpnService() {
     }
 
     override fun onDestroy() {
+        isDestroyed = true
         reconnectManager.stopMonitoring()
         reconnectManager.unbindService()
-        serviceScope.launch { disconnect() }
+        cleanupVpnResources()
+        publishState(ConnectionState())
+        serviceScope.cancel()
         super.onDestroy()
     }
 
     private fun stopVpn() {
+        cleanupVpnResources()
+    }
+
+    private fun cleanupVpnResources() {
+        stopStatsMonitoring()
+        stopCoreWatch()
         try {
-            XrayCoreManager.stop()
             TUNManager.stop()
-            vpnInterface?.close()
+            XrayCoreManager.stop()
+            runCatching {
+                vpnInterface?.close()
+            }.onFailure {
+                Timber.w(it, "Failed to close VPN interface")
+            }
             vpnInterface = null
-            stopForeground(STOP_FOREGROUND_REMOVE)
+            runCatching {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            }.onFailure {
+                Timber.w(it, "Failed to stop foreground notification")
+            }
             releaseWakeLock()
         } catch (e: Exception) {
             Timber.e(e, "Error stopping VPN")
         }
+    }
+
+    private fun hasActiveVpnResources(): Boolean {
+        val status = _connectionState.value.status
+        return status != ConnectionStatus.DISCONNECTED ||
+            vpnInterface != null ||
+            TUNManager.isTunActive() ||
+            XrayCoreManager.isRunning.value
     }
 
     private suspend fun autoConnectLastConfig() {

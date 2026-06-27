@@ -58,7 +58,11 @@ object TUNManager {
                 Timber.w(it, "Failed to stop tun2socks engine cleanly")
             }
         }
-        tunFd?.close()
+        runCatching {
+            tunFd?.close()
+        }.onFailure {
+            Timber.w(it, "Failed to close TUN file descriptor")
+        }
         tunFd = null
         isActive = false
         Timber.i("TUN engine stopped")
