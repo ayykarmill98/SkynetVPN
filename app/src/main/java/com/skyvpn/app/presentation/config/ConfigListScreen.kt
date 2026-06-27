@@ -20,8 +20,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -35,6 +39,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SearchBar
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -52,6 +57,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.skyvpn.app.domain.model.VPNConfig
 import com.skyvpn.app.util.ClipboardUtils
+import com.skyvpn.app.util.ShareUtils
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,6 +73,7 @@ fun ConfigListScreen(
     var isSearchActive by remember { mutableStateOf(false) }
     var showImportDialog by remember { mutableStateOf(false) }
     var importText by remember { mutableStateOf("") }
+    var editingConfig by remember { mutableStateOf<VPNConfig?>(null) }
     val context = LocalContext.current
 
     Scaffold(
@@ -144,7 +151,14 @@ fun ConfigListScreen(
                             config = config,
                             onClick = { onConfigSelected(config.id) },
                             onDelete = { viewModel.deleteConfig(config) },
-                            onPin = { viewModel.togglePin(config.id, !config.isPinned) }
+                            onPin = { viewModel.togglePin(config.id, !config.isPinned) },
+                            onEdit = { editingConfig = config },
+                            onExport = {
+                                viewModel.exportConfig(config)?.let { exported ->
+                                    ShareUtils.shareText(context, exported, "Export Config")
+                                }
+                            },
+                            onToggleLock = { viewModel.toggleLocked(config) }
                         )
                     }
                 }
@@ -195,6 +209,17 @@ fun ConfigListScreen(
             }
         )
     }
+
+    editingConfig?.let { config ->
+        EditConfigDialog(
+            config = config,
+            onDismiss = { editingConfig = null },
+            onSave = { updated ->
+                viewModel.updateConfig(updated)
+                editingConfig = null
+            }
+        )
+    }
 }
 
 @Composable
@@ -202,7 +227,10 @@ private fun ConfigCard(
     config: VPNConfig,
     onClick: () -> Unit,
     onDelete: () -> Unit,
-    onPin: () -> Unit
+    onPin: () -> Unit,
+    onEdit: () -> Unit,
+    onExport: () -> Unit,
+    onToggleLock: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -256,11 +284,11 @@ private fun ConfigCard(
                     }
                 }
                 Text(
-                    text = "${config.protocol.name} | ${config.address}:${config.port}",
+                    text = if (config.isLocked) "Config locked" else "${config.protocol.name} | ${config.address}:${config.port}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )
-                if (config.transportType != com.skyvpn.app.domain.model.TransportType.TCP) {
+                if (!config.isLocked && config.transportType != com.skyvpn.app.domain.model.TransportType.TCP) {
                     Text(
                         text = "${config.transportType.name} + ${config.security.name}",
                         style = MaterialTheme.typography.bodySmall,
@@ -268,17 +296,182 @@ private fun ConfigCard(
                     )
                 }
             }
-            IconButton(onClick = onPin) {
-                Icon(
-                    Icons.Default.PushPin,
-                    "Pin",
-                    tint = if (config.isPinned) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                )
-            }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
+            Column(horizontalAlignment = Alignment.End) {
+                Row {
+                    IconButton(onClick = onPin, modifier = Modifier.size(36.dp)) {
+                        Icon(
+                            Icons.Default.PushPin,
+                            "Pin",
+                            tint = if (config.isPinned) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                        )
+                    }
+                    IconButton(onClick = onToggleLock, modifier = Modifier.size(36.dp)) {
+                        Icon(
+                            if (config.isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                            if (config.isLocked) "Unlock" else "Lock",
+                            tint = if (config.isLocked) MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                        )
+                    }
+                    IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
+                    }
+                }
+                Row {
+                    IconButton(
+                        onClick = onEdit,
+                        enabled = !config.isLocked,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Edit,
+                            "Edit",
+                            tint = if (config.isLocked) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)
+                            else MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    IconButton(
+                        onClick = onExport,
+                        enabled = !config.isLocked,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Share,
+                            "Export",
+                            tint = if (config.isLocked) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)
+                            else MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
             }
         }
     }
+}
+
+@Composable
+private fun EditConfigDialog(
+    config: VPNConfig,
+    onDismiss: () -> Unit,
+    onSave: (VPNConfig) -> Unit
+) {
+    var name by remember(config.id) { mutableStateOf(config.name) }
+    var address by remember(config.id) { mutableStateOf(config.address) }
+    var port by remember(config.id) { mutableStateOf(config.port.toString()) }
+    var uuid by remember(config.id) { mutableStateOf(config.uuid) }
+    var password by remember(config.id) { mutableStateOf(config.password) }
+    var host by remember(config.id) { mutableStateOf(config.host) }
+    var path by remember(config.id) { mutableStateOf(config.path) }
+    var sni by remember(config.id) { mutableStateOf(config.sni) }
+    var isLocked by remember(config.id) { mutableStateOf(config.isLocked) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit Config") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Name") }
+                )
+                OutlinedTextField(
+                    value = address,
+                    onValueChange = { address = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Server Address") }
+                )
+                OutlinedTextField(
+                    value = port,
+                    onValueChange = { port = it.filter(Char::isDigit).take(5) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Port") }
+                )
+                OutlinedTextField(
+                    value = uuid,
+                    onValueChange = { uuid = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("UUID / User ID") }
+                )
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Password") }
+                )
+                OutlinedTextField(
+                    value = host,
+                    onValueChange = { host = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Host") }
+                )
+                OutlinedTextField(
+                    value = path,
+                    onValueChange = { path = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Path") }
+                )
+                OutlinedTextField(
+                    value = sni,
+                    onValueChange = { sni = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("SNI") }
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("Config Lock")
+                        Text(
+                            if (isLocked) "Locked" else "Unlocked",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                    Switch(
+                        checked = isLocked,
+                        onCheckedChange = { isLocked = it }
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(
+                        config.copy(
+                            name = name.trim(),
+                            address = address.trim(),
+                            port = port.toIntOrNull()?.coerceIn(1, 65535) ?: config.port,
+                            uuid = uuid.trim(),
+                            password = password.trim(),
+                            host = host.trim(),
+                            path = path.trim(),
+                            sni = sni.trim(),
+                            isLocked = isLocked
+                        )
+                    )
+                },
+                enabled = name.isNotBlank() && address.isNotBlank()
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }

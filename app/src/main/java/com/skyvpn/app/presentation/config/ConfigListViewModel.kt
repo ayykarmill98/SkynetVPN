@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.skyvpn.app.domain.model.VPNConfig
 import com.skyvpn.app.domain.repository.VPNConfigRepository
+import com.skyvpn.app.domain.usecase.ExportConfigUseCase
 import com.skyvpn.app.util.ConfigParser
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,7 +15,8 @@ import javax.inject.Inject
 
 @HiltViewModel
 class ConfigListViewModel @Inject constructor(
-    private val configRepository: VPNConfigRepository
+    private val configRepository: VPNConfigRepository,
+    private val exportConfigUseCase: ExportConfigUseCase
 ) : ViewModel() {
 
     private val _configs = MutableStateFlow<List<VPNConfig>>(emptyList())
@@ -100,9 +102,24 @@ class ConfigListViewModel @Inject constructor(
         }
     }
 
+    fun updateConfig(config: VPNConfig) {
+        viewModelScope.launch {
+            configRepository.updateConfig(config.copy(updatedAt = System.currentTimeMillis()))
+        }
+    }
+
     fun togglePin(id: Long, isPinned: Boolean) {
         viewModelScope.launch {
             configRepository.updatePinned(id, isPinned)
         }
+    }
+
+    fun toggleLocked(config: VPNConfig) {
+        updateConfig(config.copy(isLocked = !config.isLocked))
+    }
+
+    fun exportConfig(config: VPNConfig): String? {
+        if (config.isLocked) return null
+        return exportConfigUseCase(config).getOrNull()
     }
 }
