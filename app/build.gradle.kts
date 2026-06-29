@@ -21,8 +21,8 @@ android {
         applicationId = "com.skyvpn.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = System.getenv("APP_VERSION_CODE")?.toIntOrNull() ?: 9
-        versionName = System.getenv("APP_VERSION_NAME") ?: System.getenv("APP_VERSION") ?: "1.0.8"
+        versionCode = System.getenv("APP_VERSION_CODE")?.toIntOrNull() ?: 11
+        versionName = System.getenv("APP_VERSION_NAME") ?: System.getenv("APP_VERSION") ?: "1.0.10"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

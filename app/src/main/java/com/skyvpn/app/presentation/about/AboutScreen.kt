@@ -35,6 +35,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import com.skyvpn.app.BuildConfig
+import com.skyvpn.app.util.AppUpdateChecker
 
 private const val AdminWhatsAppNumber = "082183496832"
 private const val AdminWhatsAppUrl = "https://wa.me/6282183496832"
@@ -87,7 +89,7 @@ fun AboutScreen(onNavigateBack: () -> Unit) {
             Spacer(modifier = Modifier.height(4.dp))
 
             Text(
-                text = "Version 1.0.0",
+                text = "Version ${BuildConfig.VERSION_NAME}",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
             )
@@ -130,6 +132,17 @@ fun AboutScreen(onNavigateBack: () -> Unit) {
                             Toast.makeText(
                                 context,
                                 "Tidak ada aplikasi untuk membuka WhatsApp",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    ClickableAboutItem("Update Aplikasi", "Download versi terbaru") {
+                        val opened = AppUpdateChecker.openDownload(context)
+                        if (!opened) {
+                            Toast.makeText(
+                                context,
+                                "Tidak dapat membuka link update",
                                 Toast.LENGTH_SHORT
                             ).show()
                         }

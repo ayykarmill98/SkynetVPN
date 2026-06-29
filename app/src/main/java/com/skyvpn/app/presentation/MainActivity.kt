@@ -3,16 +3,25 @@ package com.skyvpn.app.presentation
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.compose.NavHost
@@ -32,6 +41,8 @@ import com.skyvpn.app.presentation.stats.StatsScreen
 import com.skyvpn.app.presentation.stats.StatsViewModel
 import com.skyvpn.app.presentation.theme.SkyVPNTheme
 import com.skyvpn.app.service.SkyVPNService
+import com.skyvpn.app.util.AppUpdateChecker
+import com.skyvpn.app.util.AppUpdateInfo
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
@@ -62,6 +73,14 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             SkyVPNTheme {
+                val context = this@MainActivity
+                var availableUpdate by remember { mutableStateOf<AppUpdateInfo?>(null) }
+                var isUpdateDialogDismissed by remember { mutableStateOf(false) }
+
+                LaunchedEffect(Unit) {
+                    availableUpdate = AppUpdateChecker.checkForMondayUpdate(context)
+                }
+
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
@@ -131,6 +150,46 @@ class MainActivity : ComponentActivity() {
                                 onNavigateBack = { navController.popBackStack() }
                             )
                         }
+                    }
+                }
+
+                availableUpdate?.let { updateInfo ->
+                    if (!isUpdateDialogDismissed) {
+                        AlertDialog(
+                            onDismissRequest = { isUpdateDialogDismissed = true },
+                            title = { Text("Update tersedia") },
+                            text = {
+                                Text(
+                                    "${updateInfo.message}\n\n" +
+                                        "Versi terbaru: ${updateInfo.versionName}"
+                                )
+                            },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        isUpdateDialogDismissed = true
+                                        val opened = AppUpdateChecker.openDownload(
+                                            context,
+                                            updateInfo.apkUrl
+                                        )
+                                        if (!opened) {
+                                            Toast.makeText(
+                                                context,
+                                                "Tidak dapat membuka link update",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    }
+                                ) {
+                                    Text("Update")
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { isUpdateDialogDismissed = true }) {
+                                    Text("Nanti")
+                                }
+                            }
+                        )
                     }
                 }
             }
