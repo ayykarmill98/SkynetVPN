@@ -40,6 +40,9 @@ interface VPNConfigDao {
     @Query("DELETE FROM vpn_configs WHERE id = :id")
     suspend fun deleteConfigById(id: Long)
 
+    @Query("DELETE FROM vpn_configs WHERE source = :source")
+    suspend fun deleteConfigsBySource(source: String)
+
     @Query("SELECT COUNT(*) FROM vpn_configs")
     suspend fun getConfigCount(): Int
 

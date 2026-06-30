@@ -4,6 +4,7 @@ import com.skyvpn.app.domain.model.LogLevel
 import com.skyvpn.app.domain.model.SecurityType
 import com.skyvpn.app.domain.model.TransportType
 import com.skyvpn.app.domain.model.VPNConfig
+import com.skyvpn.app.domain.model.VPNConfigSource
 import com.skyvpn.app.domain.model.VPNLog
 import com.skyvpn.app.domain.model.VPNProtocol
 
@@ -19,6 +20,7 @@ fun VPNConfig.toEntity(): VPNConfigEntity = VPNConfigEntity(
     lockPassword = lockPassword, isExpired = isExpired,
     expireDate = expireDate, watermark = watermark,
     dnsRemote = dnsRemote, isPinned = isPinned,
+    source = source.name, freeAccountId = freeAccountId,
     createdAt = createdAt, updatedAt = updatedAt
 )
 
@@ -37,6 +39,8 @@ fun VPNConfigEntity.toDomain(): VPNConfig = VPNConfig(
     lockPassword = lockPassword, isExpired = isExpired,
     expireDate = expireDate, watermark = watermark,
     dnsRemote = dnsRemote, isPinned = isPinned,
+    source = runCatching { VPNConfigSource.valueOf(source) }.getOrDefault(VPNConfigSource.MANUAL),
+    freeAccountId = freeAccountId,
     createdAt = createdAt, updatedAt = updatedAt
 )
 

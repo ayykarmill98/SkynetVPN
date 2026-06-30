@@ -12,6 +12,10 @@ enum class SecurityType {
     NONE, TLS, REALITY
 }
 
+enum class VPNConfigSource {
+    MANUAL, FREE
+}
+
 data class VPNConfig(
     val id: Long = 0,
     val name: String = "",
@@ -43,9 +47,14 @@ data class VPNConfig(
     val watermark: String = "",
     val dnsRemote: String = "8.8.8.8",
     val isPinned: Boolean = false,
+    val source: VPNConfigSource = VPNConfigSource.MANUAL,
+    val freeAccountId: String = "",
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
-)
+) {
+    val isFreeAccount: Boolean
+        get() = source == VPNConfigSource.FREE
+}
 
 data class ServerInfo(
     val ping: Long = -1,

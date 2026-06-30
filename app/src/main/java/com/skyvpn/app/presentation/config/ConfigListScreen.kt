@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shield
@@ -46,6 +47,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SearchBar
 import androidx.compose.material3.SnackbarHost
@@ -89,6 +91,7 @@ fun ConfigListScreen(
     val allConfigs by viewModel.configs.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val isFreeAccountSyncing by viewModel.isFreeAccountSyncing.collectAsState()
     val importMessage by viewModel.importMessage.collectAsState()
     val selectedConfigId by viewModel.selectedConfigId.collectAsState()
 
@@ -198,6 +201,26 @@ fun ConfigListScreen(
                     leadingIcon = { Icon(Icons.Default.Search, "Search") },
                     modifier = Modifier.fillMaxWidth()
                 ) {}
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.End
+            ) {
+                OutlinedButton(
+                    onClick = { viewModel.syncFreeAccounts() },
+                    enabled = !isLoading && !isQrImporting
+                ) {
+                    Icon(
+                        Icons.Default.Refresh,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(if (isFreeAccountSyncing) "Memperbarui..." else "Update Akun Gratis")
+                }
             }
 
             ActiveConfigBanner(
@@ -405,9 +428,20 @@ private fun ConfigCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = config.name.ifEmpty { "Unnamed" },
+                        modifier = Modifier.weight(1f, fill = false),
                         style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
+                    if (config.isFreeAccount) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "AKUN FREE",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                     if (isSelected) {
                         Spacer(modifier = Modifier.width(4.dp))
                         Icon(
@@ -468,7 +502,13 @@ private fun ConfigCard(
                 }
             }
             Column(horizontalAlignment = Alignment.End) {
-                if (config.isLocked) {
+                if (config.isFreeAccount) {
+                    Text(
+                        text = "Dikelola admin",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    )
+                } else if (config.isLocked) {
                     IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
                         Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
                     }

@@ -4,6 +4,7 @@ import com.skyvpn.app.data.local.VPNConfigDao
 import com.skyvpn.app.data.local.toDomain
 import com.skyvpn.app.data.local.toEntity
 import com.skyvpn.app.domain.model.VPNConfig
+import com.skyvpn.app.domain.model.VPNConfigSource
 import com.skyvpn.app.domain.repository.VPNConfigRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -39,6 +40,9 @@ class VPNConfigRepositoryImpl @Inject constructor(
 
     override suspend fun deleteConfigById(id: Long) =
         dao.deleteConfigById(id)
+
+    override suspend fun deleteConfigsBySource(source: VPNConfigSource) =
+        dao.deleteConfigsBySource(source.name)
 
     override suspend fun getConfigCount(): Int =
         dao.getConfigCount()

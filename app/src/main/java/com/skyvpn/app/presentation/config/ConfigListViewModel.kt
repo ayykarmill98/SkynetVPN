@@ -3,10 +3,12 @@ package com.skyvpn.app.presentation.config
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.skyvpn.app.domain.model.VPNConfig
+import com.skyvpn.app.domain.model.VPNConfigSource
 import com.skyvpn.app.domain.repository.SettingsRepository
 import com.skyvpn.app.domain.repository.VPNConfigRepository
 import com.skyvpn.app.domain.usecase.ExportConfigUseCase
 import com.skyvpn.app.util.ConfigParser
+import com.skyvpn.app.util.FreeAccountUpdater
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,6 +38,9 @@ class ConfigListViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _isFreeAccountSyncing = MutableStateFlow(false)
+    val isFreeAccountSyncing: StateFlow<Boolean> = _isFreeAccountSyncing.asStateFlow()
+
     private val _importMessage = MutableStateFlow<String?>(null)
     val importMessage: StateFlow<String?> = _importMessage.asStateFlow()
 
@@ -45,6 +50,7 @@ class ConfigListViewModel @Inject constructor(
     init {
         loadConfigs()
         observeSelectedConfig()
+        syncFreeAccounts(showMessage = false)
     }
 
     private fun loadConfigs() {
@@ -151,6 +157,10 @@ class ConfigListViewModel @Inject constructor(
 
     fun deleteConfig(config: VPNConfig) {
         viewModelScope.launch {
+            if (config.isFreeAccount) {
+                _importMessage.value = "Akun free dikelola admin"
+                return@launch
+            }
             configRepository.deleteConfig(config)
             if (_selectedConfigId.value == config.id) {
                 val nextConfig = _configs.value
@@ -171,29 +181,113 @@ class ConfigListViewModel @Inject constructor(
 
     fun renameConfig(id: Long, name: String) {
         viewModelScope.launch {
+            val config = _configs.value.firstOrNull { it.id == id }
+            if (config?.isFreeAccount == true) {
+                _importMessage.value = "Akun free tidak dapat diedit"
+                return@launch
+            }
             configRepository.renameConfig(id, name)
         }
     }
 
     fun updateConfig(config: VPNConfig) {
         viewModelScope.launch {
+            if (config.isFreeAccount) {
+                _importMessage.value = "Akun free tidak dapat diedit"
+                return@launch
+            }
             configRepository.updateConfig(config.copy(updatedAt = System.currentTimeMillis()))
         }
     }
 
     fun togglePin(id: Long, isPinned: Boolean) {
         viewModelScope.launch {
+            val config = _configs.value.firstOrNull { it.id == id }
+            if (config?.isFreeAccount == true) {
+                _importMessage.value = "Akun free dikelola admin"
+                return@launch
+            }
             configRepository.updatePinned(id, isPinned)
         }
     }
 
     fun lockConfig(config: VPNConfig) {
+        if (config.isFreeAccount) {
+            _importMessage.value = "Akun free dikelola admin"
+            return
+        }
         updateConfig(config.copy(isLocked = true))
     }
 
     fun exportConfig(config: VPNConfig, protect: Boolean): String? {
-        if (config.isLocked) return null
+        if (config.isLocked || config.isFreeAccount) return null
         return exportConfigUseCase(config, protect).getOrNull()
+    }
+
+    fun syncFreeAccounts(showMessage: Boolean = true) {
+        if (_isFreeAccountSyncing.value) return
+        _isFreeAccountSyncing.value = true
+
+        viewModelScope.launch {
+            _isLoading.value = true
+            if (showMessage) _importMessage.value = null
+
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    FreeAccountUpdater.fetchFreeAccounts()
+                }
+                val selectedIdBeforeSync = settingsRepository.getLastUsedConfigId()
+                val selectedConfigBeforeSync = selectedIdBeforeSync
+                    .takeIf { it > 0 }
+                    ?.let { configRepository.getConfigById(it) }
+                val shouldSelectFreeAccount =
+                    selectedIdBeforeSync <= 0 || selectedConfigBeforeSync?.isFreeAccount == true
+                val preferredFreeAccountId = selectedConfigBeforeSync
+                    ?.freeAccountId
+                    ?.takeIf { it.isNotBlank() }
+
+                configRepository.deleteConfigsBySource(VPNConfigSource.FREE)
+                val insertedIdsByFreeAccountId = mutableMapOf<String, Long>()
+                var firstInsertedId: Long? = null
+                result.configs.forEach { config ->
+                    val insertedId = configRepository.insertConfig(config)
+                    if (firstInsertedId == null) firstInsertedId = insertedId
+                    if (config.freeAccountId.isNotBlank()) {
+                        insertedIdsByFreeAccountId[config.freeAccountId] = insertedId
+                    }
+                }
+
+                if (shouldSelectFreeAccount) {
+                    val nextSelectedId = preferredFreeAccountId
+                        ?.let { insertedIdsByFreeAccountId[it] }
+                        ?: firstInsertedId
+                        ?: -1L
+                    settingsRepository.setLastUsedConfigId(nextSelectedId)
+                    _selectedConfigId.value = nextSelectedId
+                }
+
+                if (showMessage) {
+                    _importMessage.value = when {
+                        result.configs.isEmpty() && result.skippedCount == 0 ->
+                            "Belum ada akun free di server"
+                        result.configs.isEmpty() ->
+                            "Tidak ada akun free valid"
+                        result.skippedCount > 0 ->
+                            "Akun free diperbarui: ${result.configs.size}, dilewati: ${result.skippedCount}"
+                        else ->
+                            "Akun free diperbarui: ${result.configs.size}"
+                    }
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to sync free accounts")
+                if (showMessage) {
+                    _importMessage.value = "Update akun free gagal: ${e.message ?: "unknown error"}"
+                }
+            } finally {
+                _isFreeAccountSyncing.value = false
+                _isLoading.value = false
+            }
+        }
     }
 
     fun showMessage(message: String) {
@@ -210,7 +304,8 @@ class ConfigListViewModel @Inject constructor(
         return configs.filter { config ->
             config.name.contains(cleanQuery, ignoreCase = true) ||
                 config.address.contains(cleanQuery, ignoreCase = true) ||
-                config.protocol.name.contains(cleanQuery, ignoreCase = true)
+                config.protocol.name.contains(cleanQuery, ignoreCase = true) ||
+                (config.isFreeAccount && "akun free".contains(cleanQuery, ignoreCase = true))
         }
     }
 

@@ -35,7 +35,10 @@ object DatabaseModule {
             context,
             SkyVPNDatabase::class.java,
             "skyvpn_db"
-        ).fallbackToDestructiveMigration().build()
+        )
+            .addMigrations(SkyVPNDatabase.Migration1To2)
+            .fallbackToDestructiveMigration()
+            .build()
     }
 
     @Provides
