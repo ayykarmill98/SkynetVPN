@@ -6,6 +6,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -72,7 +74,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.skyvpn.app.domain.model.SecurityType
+import com.skyvpn.app.domain.model.TransportType
 import com.skyvpn.app.domain.model.VPNConfig
+import com.skyvpn.app.domain.model.VPNProtocol
 import com.skyvpn.app.util.ClipboardUtils
 import com.skyvpn.app.util.ConfigParser
 import com.skyvpn.app.util.QrCodeImportDecoder
@@ -97,6 +102,7 @@ fun ConfigListScreen(
 
     var isSearchActive by remember { mutableStateOf(false) }
     var showImportDialog by remember { mutableStateOf(false) }
+    var showManualDialog by remember { mutableStateOf(false) }
     var importText by remember { mutableStateOf("") }
     var isQrImporting by remember { mutableStateOf(false) }
     var editingConfig by remember { mutableStateOf<VPNConfig?>(null) }
@@ -211,7 +217,7 @@ fun ConfigListScreen(
             ) {
                 OutlinedButton(
                     onClick = { viewModel.syncFreeAccounts() },
-                    enabled = !isLoading && !isQrImporting
+                    enabled = !isLoading && !isQrImporting && !isFreeAccountSyncing
                 ) {
                     Icon(
                         Icons.Default.Refresh,
@@ -296,7 +302,7 @@ fun ConfigListScreen(
                         modifier = Modifier.fillMaxWidth(),
                         minLines = 4,
                         maxLines = 8,
-                        placeholder = { Text("Paste configs or subscription URL") }
+                        placeholder = { Text("Paste config text") }
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     TextButton(
@@ -306,6 +312,44 @@ fun ConfigListScreen(
                         enabled = !isLoading && !isQrImporting
                     ) {
                         Text("Paste Clipboard")
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        TextButton(
+                            onClick = {
+                                showImportDialog = false
+                                showManualDialog = true
+                            },
+                            modifier = Modifier.weight(1f),
+                            enabled = !isLoading && !isQrImporting
+                        ) {
+                            Icon(
+                                Icons.Default.Add,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Tambah Manual", maxLines = 1)
+                        }
+                        TextButton(
+                            onClick = {
+                                viewModel.importFromUrl(importText.trim())
+                                importText = ""
+                                showImportDialog = false
+                            },
+                            modifier = Modifier.weight(1f),
+                            enabled = looksLikeRemoteUrl(importText) && !isLoading && !isQrImporting
+                        ) {
+                            Icon(
+                                Icons.Default.Link,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Import URL", maxLines = 1)
+                        }
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -356,6 +400,16 @@ fun ConfigListScreen(
                 TextButton(onClick = { showImportDialog = false }) {
                     Text("Cancel")
                 }
+            }
+        )
+    }
+
+    if (showManualDialog) {
+        ManualConfigDialog(
+            onDismiss = { showManualDialog = false },
+            onSave = { config ->
+                viewModel.addManualConfig(config)
+                showManualDialog = false
             }
         )
     }
@@ -757,6 +811,352 @@ private fun createQrBitmap(text: String): Bitmap? {
             }
         }
     }.getOrNull()
+}
+
+@Composable
+private fun ManualConfigDialog(
+    onDismiss: () -> Unit,
+    onSave: (VPNConfig) -> Unit
+) {
+    var protocol by remember { mutableStateOf(VPNProtocol.VLESS) }
+    var name by remember { mutableStateOf("") }
+    var address by remember { mutableStateOf("") }
+    var port by remember { mutableStateOf("443") }
+    var uuid by remember { mutableStateOf("") }
+    var alterId by remember { mutableStateOf("0") }
+    var flow by remember { mutableStateOf("") }
+    var username by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var method by remember { mutableStateOf("aes-256-gcm") }
+    var transportType by remember { mutableStateOf(TransportType.TCP) }
+    var security by remember { mutableStateOf(SecurityType.TLS) }
+    var host by remember { mutableStateOf("") }
+    var path by remember { mutableStateOf("") }
+    var sni by remember { mutableStateOf("") }
+    var publicKey by remember { mutableStateOf("") }
+    var shortId by remember { mutableStateOf("") }
+    var fingerprint by remember { mutableStateOf("chrome") }
+    var spiderX by remember { mutableStateOf("/") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Tambah Config Manual") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("Protocol", style = MaterialTheme.typography.labelMedium)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    ProtocolButton("VLESS", protocol == VPNProtocol.VLESS, Modifier.weight(1f)) {
+                        protocol = VPNProtocol.VLESS
+                    }
+                    ProtocolButton("VMess", protocol == VPNProtocol.VMESS, Modifier.weight(1f)) {
+                        protocol = VPNProtocol.VMESS
+                    }
+                    ProtocolButton("Trojan", protocol == VPNProtocol.TROJAN, Modifier.weight(1f)) {
+                        protocol = VPNProtocol.TROJAN
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    ProtocolButton("SS", protocol == VPNProtocol.SHADOWSOCKS, Modifier.weight(1f)) {
+                        protocol = VPNProtocol.SHADOWSOCKS
+                    }
+                    ProtocolButton("SOCKS", protocol == VPNProtocol.SOCKS, Modifier.weight(1f)) {
+                        protocol = VPNProtocol.SOCKS
+                    }
+                    ProtocolButton("HTTP", protocol == VPNProtocol.HTTP, Modifier.weight(1f)) {
+                        protocol = VPNProtocol.HTTP
+                    }
+                }
+
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Nama") }
+                )
+                OutlinedTextField(
+                    value = address,
+                    onValueChange = { address = it.trim() },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Server Address") }
+                )
+                OutlinedTextField(
+                    value = port,
+                    onValueChange = { port = it.filter(Char::isDigit).take(5) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Port") }
+                )
+
+                when (protocol) {
+                    VPNProtocol.VMESS, VPNProtocol.VLESS -> {
+                        OutlinedTextField(
+                            value = uuid,
+                            onValueChange = { uuid = it.trim() },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            label = { Text("UUID") }
+                        )
+                        if (protocol == VPNProtocol.VMESS) {
+                            OutlinedTextField(
+                                value = alterId,
+                                onValueChange = { alterId = it.filter(Char::isDigit).take(5) },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                label = { Text("Alter ID") }
+                            )
+                        }
+                        if (protocol == VPNProtocol.VLESS) {
+                            OutlinedTextField(
+                                value = flow,
+                                onValueChange = { flow = it.trim() },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                label = { Text("Flow") }
+                            )
+                        }
+                    }
+                    VPNProtocol.TROJAN -> {
+                        OutlinedTextField(
+                            value = password,
+                            onValueChange = { password = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            label = { Text("Password") }
+                        )
+                    }
+                    VPNProtocol.SHADOWSOCKS -> {
+                        OutlinedTextField(
+                            value = method,
+                            onValueChange = { method = it.trim() },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            label = { Text("Method") }
+                        )
+                        OutlinedTextField(
+                            value = password,
+                            onValueChange = { password = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            label = { Text("Password") }
+                        )
+                    }
+                    VPNProtocol.SOCKS, VPNProtocol.HTTP -> {
+                        OutlinedTextField(
+                            value = username,
+                            onValueChange = { username = it.trim() },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            label = { Text("Username") }
+                        )
+                        OutlinedTextField(
+                            value = password,
+                            onValueChange = { password = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            label = { Text("Password") }
+                        )
+                    }
+                }
+
+                if (protocol == VPNProtocol.VMESS ||
+                    protocol == VPNProtocol.VLESS ||
+                    protocol == VPNProtocol.TROJAN
+                ) {
+                    Text("Transport", style = MaterialTheme.typography.labelMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        ProtocolButton("TCP", transportType == TransportType.TCP, Modifier.weight(1f)) {
+                            transportType = TransportType.TCP
+                        }
+                        ProtocolButton("WS", transportType == TransportType.WEBSOCKET, Modifier.weight(1f)) {
+                            transportType = TransportType.WEBSOCKET
+                        }
+                        ProtocolButton("gRPC", transportType == TransportType.GRPC, Modifier.weight(1f)) {
+                            transportType = TransportType.GRPC
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        ProtocolButton(
+                            "Upgrade",
+                            transportType == TransportType.HTTP_UPGRADE,
+                            Modifier.weight(1f)
+                        ) {
+                            transportType = TransportType.HTTP_UPGRADE
+                        }
+                        ProtocolButton("H2", transportType == TransportType.HTTP2, Modifier.weight(1f)) {
+                            transportType = TransportType.HTTP2
+                        }
+                    }
+
+                    Text("Security", style = MaterialTheme.typography.labelMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        ProtocolButton("None", security == SecurityType.NONE, Modifier.weight(1f)) {
+                            security = SecurityType.NONE
+                        }
+                        ProtocolButton("TLS", security == SecurityType.TLS, Modifier.weight(1f)) {
+                            security = SecurityType.TLS
+                        }
+                        ProtocolButton("Reality", security == SecurityType.REALITY, Modifier.weight(1f)) {
+                            security = SecurityType.REALITY
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = host,
+                        onValueChange = { host = it.trim() },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text("Host") }
+                    )
+                    OutlinedTextField(
+                        value = path,
+                        onValueChange = { path = it.trim() },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text("Path / Service Name") }
+                    )
+                    OutlinedTextField(
+                        value = sni,
+                        onValueChange = { sni = it.trim() },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text("SNI") }
+                    )
+
+                    if (security == SecurityType.REALITY) {
+                        OutlinedTextField(
+                            value = publicKey,
+                            onValueChange = { publicKey = it.trim() },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            label = { Text("Public Key") }
+                        )
+                        OutlinedTextField(
+                            value = shortId,
+                            onValueChange = { shortId = it.trim() },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            label = { Text("Short ID") }
+                        )
+                        OutlinedTextField(
+                            value = fingerprint,
+                            onValueChange = { fingerprint = it.trim() },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            label = { Text("Fingerprint") }
+                        )
+                        OutlinedTextField(
+                            value = spiderX,
+                            onValueChange = { spiderX = it.trim() },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            label = { Text("Spider X") }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val cleanPort = port.toIntOrNull()?.coerceIn(1, 65535)
+                        ?: defaultPort(protocol, security)
+                    onSave(
+                        VPNConfig(
+                            name = name.trim().ifBlank { "Manual ${protocol.name}" },
+                            protocol = protocol,
+                            address = address.trim(),
+                            port = cleanPort,
+                            uuid = uuid.trim(),
+                            alterId = alterId.toIntOrNull() ?: 0,
+                            flow = flow.trim(),
+                            username = username.trim(),
+                            password = password.trim(),
+                            method = method.trim(),
+                            transportType = transportType,
+                            security = security,
+                            host = host.trim(),
+                            path = path.trim(),
+                            sni = sni.trim(),
+                            publicKey = publicKey.trim(),
+                            shortId = shortId.trim(),
+                            fingerprint = fingerprint.trim(),
+                            spiderX = spiderX.trim()
+                        )
+                    )
+                },
+                enabled = address.isNotBlank() && port.toIntOrNull()?.let { it in 1..65535 } != false
+            ) {
+                Text("Simpan")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Batal")
+            }
+        }
+    )
+}
+
+@Composable
+private fun ProtocolButton(
+    text: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    if (selected) {
+        Button(
+            onClick = onClick,
+            modifier = modifier
+        ) {
+            Text(text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    } else {
+        TextButton(
+            onClick = onClick,
+            modifier = modifier
+        ) {
+            Text(text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+private fun defaultPort(protocol: VPNProtocol, security: SecurityType): Int {
+    return when {
+        protocol == VPNProtocol.SOCKS -> 1080
+        protocol == VPNProtocol.HTTP -> 80
+        security == SecurityType.NONE -> 80
+        else -> 443
+    }
+}
+
+private fun looksLikeRemoteUrl(text: String): Boolean {
+    val clean = text.trim()
+    if (clean.lineSequence().count() != 1) return false
+    return clean.startsWith("http://", ignoreCase = true) ||
+        clean.startsWith("https://", ignoreCase = true)
 }
 
 @Composable

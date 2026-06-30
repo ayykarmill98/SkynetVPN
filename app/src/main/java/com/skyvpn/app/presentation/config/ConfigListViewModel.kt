@@ -72,16 +72,8 @@ class ConfigListViewModel @Inject constructor(
             _isLoading.value = true
             _importMessage.value = null
             try {
-                val sourceText = text.trim()
-                val importText = if (looksLikeRemoteConfigUrl(sourceText)) {
-                    withContext(Dispatchers.IO) {
-                        readRemoteText(sourceText)
-                    }
-                } else {
-                    text
-                }
                 val configs = withContext(Dispatchers.Default) {
-                    ConfigParser.parseConfigs(importText)
+                    ConfigParser.parseConfigs(text)
                 }
                 var firstInsertedId: Long? = null
                 configs.forEach { config ->
@@ -103,6 +95,29 @@ class ConfigListViewModel @Inject constructor(
             } finally {
                 _isLoading.value = false
             }
+        }
+    }
+
+    fun addManualConfig(config: VPNConfig) {
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val manualConfig = config.copy(
+                source = VPNConfigSource.MANUAL,
+                freeAccountId = "",
+                isLocked = false,
+                createdAt = now,
+                updatedAt = now
+            )
+            val validationError = ConfigParser.getValidationError(manualConfig)
+            if (validationError != null) {
+                _importMessage.value = "Config manual tidak valid: $validationError"
+                return@launch
+            }
+
+            val id = configRepository.insertConfig(manualConfig)
+            settingsRepository.setLastUsedConfigId(id)
+            _selectedConfigId.value = id
+            _importMessage.value = "Config manual ditambahkan"
         }
     }
 
@@ -229,7 +244,6 @@ class ConfigListViewModel @Inject constructor(
         _isFreeAccountSyncing.value = true
 
         viewModelScope.launch {
-            _isLoading.value = true
             if (showMessage) _importMessage.value = null
 
             try {
@@ -285,7 +299,6 @@ class ConfigListViewModel @Inject constructor(
                 }
             } finally {
                 _isFreeAccountSyncing.value = false
-                _isLoading.value = false
             }
         }
     }
@@ -315,12 +328,6 @@ class ConfigListViewModel @Inject constructor(
                 _selectedConfigId.value = settings.lastUsedConfigId
             }
         }
-    }
-
-    private fun looksLikeRemoteConfigUrl(text: String): Boolean {
-        if (text.lineSequence().count() != 1) return false
-        return text.startsWith("http://", ignoreCase = true) ||
-            text.startsWith("https://", ignoreCase = true)
     }
 
     private fun readRemoteText(url: String): String {
